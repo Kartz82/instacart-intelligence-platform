@@ -168,7 +168,7 @@ instacart-intelligence-platform/
 ## How to Run
 
 ```bash
-git clone <your-repository-url>
+git clone <repository-url>
 cd instacart-intelligence-platform
 
 # Download the dataset from Kaggle and place all files in ./data/raw/
