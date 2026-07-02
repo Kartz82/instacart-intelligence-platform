@@ -149,20 +149,19 @@ Power BI planning assets:
 Surfaces headline metrics from `analytics_kpis.mart_executive_kpis`, including total orders, total customers, total products, total order items, reorder rate, average basket size, average orders per customer, active departments, and top department by items.
 
 ### Page 2 — Product Performance
-Visualizes `analytics_kpis.mart_product_performance` with product, aisle, and department performance views.
+Analyzes product, aisle, and department performance to identify top-selling products, reorder behavior, and merchandising opportunities across the catalog.
 
 ### Page 3 — Customer Segments
-Visualizes `analytics_kpis.mart_customer_segments` with behavioral segment distribution and score-based filters.
+Explores behavioral customer segments based on purchasing frequency, basket size, and reorder patterns to support targeted engagement strategies.
 
 ### Page 4 — Cohort Retention
-Visualizes `analytics_analysis.mart_cohort_retention` as order-sequence retention.
+Tracks customer retention across successive purchase milestones, helping identify where repeat purchasing begins to decline over the customer lifecycle.
 
 ### Page 5 — Basket Affinity
-Visualizes `analytics_analysis.mart_basket_affinity` with support, confidence, lift, and co-occurrence metrics.
+Highlights frequently purchased product combinations using support, confidence, and lift metrics to uncover cross-selling and product placement opportunities.
 
-### Page 6 — Recommendations
-Summarizes validated insights and recommendations from `analysis/recommendation_memo.md`.
-
+### Page 6 — Business Recommendations
+Summarizes validated business insights and actionable recommendations derived from customer behavior, product performance, retention analysis, and basket affinity findings.
 ---
 
 ## Tech Stack
