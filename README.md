@@ -162,6 +162,7 @@ Highlights frequently purchased product combinations using support, confidence, 
 
 ### Page 6 — Business Recommendations
 Summarizes validated business insights and actionable recommendations derived from customer behavior, product performance, retention analysis, and basket affinity findings.
+
 ---
 
 ## Tech Stack
