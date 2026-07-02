@@ -19,3 +19,5 @@ __pycache__/
 .ipynb_checkpoints/
 *.ipynbbackups/
 /backups/
+dbt/target/
+dbt/logs/
