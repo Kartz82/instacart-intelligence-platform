@@ -18,4 +18,4 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynbbackups/
-backups/backups/
+/backups/
