@@ -1,0 +1,141 @@
+version: 2
+
+models:
+  - name: mart_executive_kpis
+    description: One-row executive KPI snapshot built from dbt core marts.
+    columns:
+      - name: kpi_snapshot_id
+        description: Static identifier for the single KPI snapshot row.
+        tests:
+          - not_null
+          - unique
+      - name: total_orders
+        description: Count of observed orders.
+        tests:
+          - not_null
+      - name: total_customers
+        description: Count of observed customers.
+        tests:
+          - not_null
+      - name: total_products
+        description: Count of products in the product dimension.
+        tests:
+          - not_null
+      - name: total_order_items
+        description: Count of order-product line items.
+        tests:
+          - not_null
+      - name: reorder_rate
+        description: Share of order-product line items marked as reordered.
+        tests:
+          - not_null
+      - name: average_basket_size
+        description: Average count of product line items per order.
+        tests:
+          - not_null
+      - name: average_orders_per_customer
+        description: Average observed order count per customer.
+        tests:
+          - not_null
+      - name: active_departments
+        description: Count of departments represented in purchased order items.
+        tests:
+          - not_null
+      - name: top_department_by_items
+        description: Department with the highest order-item count.
+        tests:
+          - not_null
+
+  - name: mart_product_performance
+    description: Product-level performance mart with volume, reach, and reorder behavior.
+    columns:
+      - name: product_id
+        description: Product identifier.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: product_name
+        tests:
+          - not_null
+      - name: aisle_name
+        tests:
+          - not_null
+      - name: department_name
+        tests:
+          - not_null
+      - name: total_order_items
+        description: Number of order-product lines containing this product.
+        tests:
+          - not_null
+      - name: distinct_orders
+        description: Distinct orders containing this product.
+        tests:
+          - not_null
+      - name: distinct_customers
+        description: Distinct customers who purchased this product.
+        tests:
+          - not_null
+      - name: reorder_rate
+        description: Share of this product's order lines marked as reordered.
+
+  - name: mart_customer_segments
+    description: Behavioral customer segmentation using order frequency, basket size, reorder behavior, and latest reorder-gap proxy.
+    columns:
+      - name: user_id
+        description: Customer identifier.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: user_id
+      - name: total_orders
+        tests:
+          - not_null
+      - name: total_items_purchased
+        tests:
+          - not_null
+      - name: avg_basket_size
+        tests:
+          - not_null
+      - name: customer_reorder_rate
+        tests:
+          - not_null
+      - name: frequency_score
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: basket_size_score
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: reorder_score
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: recency_proxy_score
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5]
+      - name: behavioral_score
+        tests:
+          - not_null
+      - name: behavioral_segment
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['High Engagement', 'Loyal Routine', 'At Risk', 'Early Lifecycle', 'Moderate Engagement']

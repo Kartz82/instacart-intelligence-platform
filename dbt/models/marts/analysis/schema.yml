@@ -1,0 +1,74 @@
+version: 2
+
+models:
+  - name: mart_cohort_retention
+    description: Order-sequence retention mart showing how many customers reach each observed order milestone.
+    columns:
+      - name: order_sequence_index
+        description: Zero-based index from each customer's first observed order.
+        tests:
+          - not_null
+          - unique
+      - name: observed_order_number
+        description: One-based observed order milestone for BI presentation.
+        tests:
+          - not_null
+      - name: starting_customers
+        description: Count of customers in the observed dataset.
+        tests:
+          - not_null
+      - name: active_customers
+        description: Count of customers observed at this order-sequence index.
+        tests:
+          - not_null
+      - name: retention_rate
+        description: Active customers divided by starting customers.
+        tests:
+          - not_null
+
+  - name: mart_basket_affinity
+    description: SQL-first product affinity mart for frequently co-occurring product pairs.
+    columns:
+      - name: product_a_id
+        description: First product in the pair, using lower product_id for stable pair direction.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: product_a_name
+        tests:
+          - not_null
+      - name: product_b_id
+        description: Second product in the pair, using higher product_id for stable pair direction.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: product_b_name
+        tests:
+          - not_null
+      - name: orders_with_a
+        tests:
+          - not_null
+      - name: orders_with_b
+        tests:
+          - not_null
+      - name: orders_with_both
+        tests:
+          - not_null
+      - name: support
+        description: Orders containing both products divided by total orders.
+        tests:
+          - not_null
+      - name: confidence_a_to_b
+        description: Orders containing both products divided by orders containing product A.
+        tests:
+          - not_null
+      - name: lift
+        description: Confidence A to B divided by product B order share.
+        tests:
+          - not_null

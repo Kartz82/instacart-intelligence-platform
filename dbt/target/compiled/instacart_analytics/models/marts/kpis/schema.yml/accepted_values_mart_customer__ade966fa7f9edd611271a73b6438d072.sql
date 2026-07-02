@@ -1,0 +1,22 @@
+
+    
+    
+
+with all_values as (
+
+    select
+        reorder_score as value_field,
+        count(*) as n_records
+
+    from "instacart_db"."analytics_kpis"."mart_customer_segments"
+    group by reorder_score
+
+)
+
+select *
+from all_values
+where value_field not in (
+    '1','2','3','4','5'
+)
+
+

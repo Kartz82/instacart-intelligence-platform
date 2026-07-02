@@ -1,49 +1,54 @@
 # Instacart Customer & Operations Intelligence Platform
-Customer Analytics · RFM Behavioral Segmentation · Market Basket Analysis · Cohort Retention · Plotly Dash Platform
 
-An end-to-end analytics platform and data engineering pipeline built on 3.4M+ transactional records to optimize customer retention, product merchandising, and cross-sell velocity. This project engineers a local Dockerized PostgreSQL data warehouse, executes advanced SQL/Python analytical layers, and exposes interactive business intelligence via a production-ready, multi-page Plotly Dash application.
+![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white) ![PostgreSQL 15](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white) ![dbt Core](https://img.shields.io/badge/dbt-Core-FF694B?logo=dbt&logoColor=white) ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white) ![SQL](https://img.shields.io/badge/SQL-PostgreSQL-336791) ![Power BI](https://img.shields.io/badge/Power%20BI-Desktop-F2C811?logo=powerbi&logoColor=black) ![Plotly Dash](https://img.shields.io/badge/Plotly-Dash-3F4F75?logo=plotly&logoColor=white) ![Analytics Engineering](https://img.shields.io/badge/Analytics-Engineering-2E7D32)
+
+Analytics Engineering · PostgreSQL Warehouse · dbt Core · SQL Analysis · Power BI Planning
+
+An end-to-end analytics engineering and BI project built on the public Instacart order dataset to analyze customer behavior, product performance, cohort retention, and basket affinity. This project engineers a local Dockerized PostgreSQL warehouse, models reusable analytics layers with dbt Core, adds recruiter-readable SQL analysis, and defines a Power BI dashboard plan connected to validated dbt marts.
 
 ---
 
 ## Project Value
 
-This project turns messy retail transactions into a clean enterprise analytics warehouse with reusable SQL assets, reliable loading, and executive-ready metrics.
+This project turns retail transaction data into a clean analytics warehouse with reusable SQL assets, reliable loading, tested dbt models, business KPI marts, and executive-ready BI documentation.
 
 It is especially strong for:
 - Data Analyst
 - Business Analyst
 - Analytics Engineer
 - Business Intelligence Analyst
-- Analytics Associate
+- Product Analyst
+- Junior Data Engineer
 
 ---
 
 ## Business Case & Objectives
 
-In high-frequency e-commerce and grocery retail, marginal improvements in retention and average order value directly drive profitability. This platform addresses critical executive questions:
+In high-frequency e-commerce and grocery retail, improvements in repeat purchase behavior, basket composition, and customer lifecycle timing can directly inform retention and merchandising strategy. This platform addresses critical executive questions:
 
-- Which customer cohorts are exhibiting churn signatures, and how can marketing personalize mitigation campaigns?
+- Which customer cohorts continue through later observed order milestones?
 - Which departments and individual products act as high-velocity drivers for repeat purchases?
-- What latent product dependencies exist across historical orders that can be exploited for bundle promotions or algorithmic recommendations?
+- Which product pairs appear together often enough to support merchandising, placement, or cross-sell analysis?
 
 ---
 
 ## Data Warehouse Profile
 
-The analytical engines ingest the anonymized **Instacart Market Basket Analysis** dataset, representing a highly dense relational network of consumer behavior.
+The analytical engines ingest the anonymized **Instacart Market Basket Analysis** dataset, representing a dense relational network of consumer shopping behavior.
 
 | Core Entity | Structural Metric |
 | :--- | ---: |
 | Total Orders Processed | 3,421,083 |
-| Unique Customer Cohorts | 206,209 |
+| Unique Customers | 206,209 |
 | Product SKU Catalog Size | 49,688 |
-| Fulfillment Departments | 21 |
-| Baseline Platform Reorder Rate | 59.0% |
+| Active Departments | 21 |
+| Platform Reorder Rate | 59.01% |
 
 ### Ingested Relational Schema
 - `orders.csv` — User order cadences, weekdays, and hours of purchase.
 - `order_products__prior.csv` / `order_products__train.csv` — Basket-level line item layouts and reorder flags.
-- `products.csv`, `aisles.csv`, `departments.csv` — Comprehensive product catalog metadata.
+- `order_products.csv` — Combined order-product line item file used by the PostgreSQL loader.
+- `products.csv`, `aisles.csv`, `departments.csv` — Product catalog and category metadata.
 
 ---
 
@@ -51,92 +56,124 @@ The analytical engines ingest the anonymized **Instacart Market Basket Analysis*
 
 ```mermaid
 flowchart TD
-    A[Instacart Source Layer] -->|Bulk Chunked Loading| B[Python ETL Engine]
-    B -->|Optimized Schema & Indexes| C[(PostgreSQL 15 Container)]
-    C -->|Complex CTEs & Window Functions| D[SQL Analytical Views]
-    D --> E[RFM Segmentation Layer]
-    D --> F[Cohort Retention Matrix]
-    D --> G[Category Deep-Dive Engine]
-    C -->|Memory-Mapped DataFrame Extract| H[Python Apriori Analytics]
-    E --> I[Multi-Tab Plotly Dash Web Application]
-    F --> I
+    A[Instacart CSV Files] -->|Python loader| B[(PostgreSQL raw schema)]
+    B --> C[dbt staging models]
+    C --> D[dbt intermediate models]
+    D --> E[dbt core star schema]
+    E --> F[dbt KPI marts]
+    E --> G[dbt analysis marts]
+    F --> H[SQL analysis files]
+    G --> H
+    F --> I[Power BI Desktop plan]
     G --> I
-    H --> I
+    H --> J[Recommendation memo]
+    I --> J
 ```
+
+Detailed architecture notes are available in:
+- `docs/architecture.md`
+- `docs/architecture_diagram.mmd`
 
 ---
 
 ## Specialized Solution Modules
 
-### Module 1 — RFM Customer Segmentation
-Leveraged SQL window functions and NTILE(5) scoring to map the 206,209-user base into behavioral segments based on transactional Recency, Frequency, and Monetary value.
+### Module 1 — Behavioral Customer Engagement Segmentation
+The dbt mart `mart_customer_segments` uses transparent SQL scoring to segment customers by observed order frequency, average basket size, reorder behavior, and a latest reorder-gap proxy.
 
-| Strategic Segment | User Count | Core Operational Action Item |
+Segmentation inputs:
+- **Recency proxy:** `latest_days_since_prior_order` from each customer's latest observed order. This is not calendar recency.
+- **Frequency:** observed order count per customer.
+- **Basket behavior:** average basket size and total purchased line items.
+- **Reorder behavior:** customer-level share of items marked as reordered.
+
+| Behavioral Segment | User Count | Core Operational Action Item |
 | :--- | ---: | :--- |
-| Champions | 15,978 | Reward with early access, VIP perks, and organic advocacy channels. |
-| Loyal Customers | 52,655 | Upsell high-margin verticals; integrate personalized loyalty programs. |
-| New Customers | 24,233 | Trigger onboarding drip campaigns to secure the critical 2nd and 3rd orders. |
-| At Risk | 55,092 | Primary retention target: execute aggressive win-back email promotions. |
-| Hibernating / Lost | 58,251 | Automate low-cost re-engagement triggers; run win-back lookalike modeling. |
+| High Engagement | 28,883 | Maintain loyalty and reinforce repeat behavior. |
+| Loyal Routine | 62,818 | Support recurring habits and category expansion. |
+| Moderate Engagement | 69,635 | Identify opportunities to deepen engagement. |
+| At Risk | 44,873 | Review lifecycle messaging and reorder timing. |
+| Early Lifecycle | 0 | Focus on onboarding and second-order activation. |
 
-**Data-driven insight:** 26.7% of the customer footprint is in **At Risk**, making this the single highest revenue recovery opportunity for the marketing team.
+**Data-driven insight:** Moderate Engagement is the largest segment with 69,635 customers, followed by Loyal Routine with 62,818 customers.
 
 ### Module 2 — Cohort Retention & Reorder Velocity
-Quantified behavioral decay and longitudinal user engagement across sequential order milestones.
+The dbt mart `mart_cohort_retention` quantifies customer continuation across observed order-sequence milestones.
 
-- Retention stands structurally at 100% through order 3 by dataset constraint.
-- Retention drops to 71% by order 6.
-- Retention stabilizes at 42% by order 12.
-- Produce generates a 65%+ reorder rate, materially outperforming the platform average.
+- Retention is based on order sequence, not calendar dates.
+- `observed_order_number` is the BI-facing milestone.
+- `retention_rate` is calculated as active customers at the milestone divided by starting customers.
 
-### Module 3 — Market Basket Analysis
-Executed Apriori association mining across 15,000 transactional basket samples.
+Validated retention insights:
+- 100.00% of customers are observed through order 3, 88.37% through order 5, 53.70% through order 10, 36.41% through order 15, and 26.15% through order 20.
 
-- Organic Strawberries → Organic Raspberries, Lift: 3.26 | Confidence: 29.1%
-- Bag of Organic Bananas → Organic Raspberries, Lift: 2.98 | Confidence: 24.3%
-- Large Lemon → Organic Baby Spinach, Lift: 2.93 | Confidence: 21.8%
+### Module 3 — Basket Affinity Analysis
+The dbt mart `mart_basket_affinity` performs SQL-first product affinity analysis for frequently co-occurring product pairs.
 
-**Data-driven insight:** The strongest affinities exist within the organic produce subset. Merchandising layouts should co-locate these items, and promotional bundles should preserve margin by avoiding unnecessary discounting on naturally high-lift pairs.
+Metrics:
+- `orders_with_a`
+- `orders_with_b`
+- `orders_with_both`
+- `support`
+- `confidence_a_to_b`
+- `lift`
+
+Validated product-pair insights:
+- Strongest lift pair: Yogurt, Sheep Milk, Strawberry + Yogurt, Sheep Milk, Blackberry with 421 co-orders, 0.0123% support, 41.89% confidence, and 1,431.68 lift.
+- Highest support pair: Bag of Organic Bananas + Organic Hass Avocado with 64,761 co-orders, 1.8930% support, 16.40% confidence, and 2.54 lift.
 
 ### Module 4 — Category & SKU Volume Analysis
-Isolated the core volume drivers across 21 departments.
+The dbt mart `mart_product_performance` isolates product, aisle, and department performance.
 
-- Produce: 9.9M total line-item volume, 65% reorder rate.
-- Dairy & Eggs: 5.6M total line-item volume, 62% reorder rate.
-- Snacks: 3.0M total line-item volume, high-margin introductory vertical.
+Metrics:
+- `total_order_items`
+- `distinct_orders`
+- `distinct_customers`
+- `reorder_rate`
 
-Top 3 SKUs:
-- Bananas — 491,291 units
-- Bag of Organic Bananas — 394,930 units
-- Organic Strawberries — 264,683 units
+Validated category and SKU insights:
+- Top SKU by item volume is Banana with 491,291 order items and an 84.51% reorder rate.
+- Top department is produce with 9,888,378 order items; top aisle is fresh fruits with 3,792,661 order items.
 
 ---
 
 ## Interactive Dashboard Platform
 
-The front-end user experience is powered by a 4-tab Plotly Dash application connected natively to the PostgreSQL warehouse.
+The final BI output is planned for Power BI Desktop and should connect to dbt marts, not raw tables.
 
-### Tab 1 — Executive Overview
-Surfaces corporate health metrics, including Total Orders, Distinct Customer Cohorts, and System Reorder Rate, plus temporal heatmaps for order velocities across hours of the day and days of the week.
+Power BI planning assets:
+- `bi/powerbi_dashboard_plan.md`
+- `bi/data_dictionary.md`
 
-### Tab 2 — Customer Lifecycle Analytics
-Visualizes the distribution of RFM behavioral clusters with filtering controls for rapid cohort analysis.
+### Page 1 — Executive Overview
+Surfaces headline metrics from `analytics_kpis.mart_executive_kpis`, including total orders, total customers, total products, total order items, reorder rate, average basket size, average orders per customer, active departments, and top department by items.
 
-### Tab 3 — Merchandising & Category Intelligence
-Monitors volumetric output and reorder efficiency across departments, isolating high-velocity items via dynamic heatmaps.
+### Page 2 — Product Performance
+Visualizes `analytics_kpis.mart_product_performance` with product, aisle, and department performance views.
 
-### Tab 4 — Market Basket Rules Interface
-Plots association rules on a support-confidence-lift diagnostic view with matching sortable rule tables.
+### Page 3 — Customer Segments
+Visualizes `analytics_kpis.mart_customer_segments` with behavioral segment distribution and score-based filters.
+
+### Page 4 — Cohort Retention
+Visualizes `analytics_analysis.mart_cohort_retention` as order-sequence retention.
+
+### Page 5 — Basket Affinity
+Visualizes `analytics_analysis.mart_basket_affinity` with support, confidence, lift, and co-occurrence metrics.
+
+### Page 6 — Recommendations
+Summarizes validated insights and recommendations from `analysis/recommendation_memo.md`.
 
 ---
 
 ## Tech Stack
 
-- Python · pandas · NumPy
-- PostgreSQL 15 · Docker
-- SQL (Window Functions, CTEs, Cohort Queries)
-- Plotly (static chart exports)
-- Power BI / Looker Studio
+- Python · pandas
+- PostgreSQL 15 · Docker Compose
+- dbt Core · dbt-postgres
+- SQL with CTEs, window functions, tests, and analytical marts
+- Power BI Desktop planning
+- Mermaid architecture documentation
+- Plotly Dash assets retained from the original project
 
 ---
 
@@ -144,11 +181,38 @@ Plots association rules on a support-confidence-lift diagnostic view with matchi
 
 ```text
 instacart-intelligence-platform/
+├── analysis/
+│   ├── basket_affinity.sql
+│   ├── cohort_retention.sql
+│   ├── customer_segments.sql
+│   ├── executive_kpis.sql
+│   ├── product_performance.sql
+│   └── recommendation_memo.md
+├── bi/
+│   ├── data_dictionary.md
+│   └── powerbi_dashboard_plan.md
 ├── dashboard/
 │   └── app.py
 ├── data/
 │   ├── processed/
 │   └── raw/
+├── dbt/
+│   ├── README.md
+│   ├── dbt_project.yml
+│   ├── profiles.yml.example
+│   ├── models/
+│   │   ├── sources.yml
+│   │   ├── staging/
+│   │   ├── intermediate/
+│   │   └── marts/
+│   │       ├── core/
+│   │       ├── kpis/
+│   │       └── analysis/
+│   └── tests/
+├── docs/
+│   ├── architecture.md
+│   └── architecture_diagram.mmd
+├── reports/
 ├── sql/
 │   ├── schema.sql
 │   ├── rfm_analysis.sql
@@ -158,8 +222,9 @@ instacart-intelligence-platform/
 │   ├── database_loader.py
 │   ├── market_basket.py
 │   └── clv_rfm_engine.py
-├── reports/
+├── .env.example
 ├── docker-compose.yml
+├── requirements.txt
 └── README.md
 ```
 
@@ -171,34 +236,62 @@ instacart-intelligence-platform/
 git clone <repository-url>
 cd instacart-intelligence-platform
 
-# Download the dataset from Kaggle and place all files in ./data/raw/
+# Install Python dependencies
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
+# Configure local PostgreSQL settings
+cp .env.example .env
+
+# Start PostgreSQL
 docker compose up -d
 
-docker exec -i instacart_postgres psql -U postgres -d instacart_db < sql/schema.sql
-
+# Load CSVs into the PostgreSQL raw schema
 python src/database_loader.py
 
-docker exec -i instacart_postgres psql -U postgres -d instacart_db < sql/rfm_analysis.sql
+# Configure dbt
+cp dbt/profiles.yml.example dbt/profiles.yml
+export DBT_PROFILES_DIR=./dbt
 
-python src/market_basket.py
+# Validate and build dbt models
+dbt debug --project-dir dbt
+dbt run --project-dir dbt --select +path:models/marts
+dbt test --project-dir dbt
 
-python dashboard/app.py
+# Run recruiter-readable analysis SQL
+psql -h localhost -p 5434 -U postgres -d instacart_db -f analysis/executive_kpis.sql
+psql -h localhost -p 5434 -U postgres -d instacart_db -f analysis/product_performance.sql
+psql -h localhost -p 5434 -U postgres -d instacart_db -f analysis/customer_segments.sql
+psql -h localhost -p 5434 -U postgres -d instacart_db -f analysis/cohort_retention.sql
+psql -h localhost -p 5434 -U postgres -d instacart_db -f analysis/basket_affinity.sql
 ```
 
-Open:
-- http://127.0.0.1:8050
+Cleanup:
+
+```bash
+docker compose down
+
+# Full local PostgreSQL volume reset
+docker compose down -v
+```
 
 ---
 
 ## Key Metrics
 
-- 3,421,083 orders analyzed.
-- 206,209 customers segmented into 5 RFM tiers.
-- 55,092 at-risk customers identified for retention targeting.
-- 59% platform reorder rate.
-- 3.26x lift on the top product association rule.
-- 42% 12-order cohort retention rate.
+- Total orders analyzed: 3,421,083.
+- Total customers analyzed: 206,209.
+- Total products analyzed: 49,688.
+- Total order items analyzed: 33,819,106.
+- Platform reorder rate: 59.01%.
+- Average basket size: 9.89 items.
+- Average orders per customer: 16.59.
+- Active departments: 21.
+- Top department by items: produce.
+- Largest behavioral customer segment: Moderate Engagement with 69,635 customers.
+- Retention at selected observed order milestones: order 1 100.00%, order 2 100.00%, order 3 100.00%, order 5 88.37%, order 10 53.70%, order 15 36.41%, order 20 26.15%.
+- Top product affinity pairs by lift/support: strongest lift is Yogurt, Sheep Milk, Strawberry + Yogurt, Sheep Milk, Blackberry at 1,431.68 lift; highest support is Bag of Organic Bananas + Organic Hass Avocado at 1.8930% support.
 
 ---
 
@@ -216,13 +309,38 @@ Open:
 ### Market Basket Analysis
 ![Market Basket Analysis](reports/market_basket.png)
 
+Additional existing report assets:
+- `reports/basket_affinity_map.png`
+- `reports/category_performance.png`
+- `reports/customer_segments.png`
+
+Power BI screenshot placeholders are documented in `bi/powerbi_dashboard_plan.md` and should be exported only after dashboard validation.
+
 ---
 
 ## What This Demonstrates
 
-- Production ETL pipeline handling 3.4M+ rows with chunked bulk loading.
-- SQL analytics using window functions, CTEs, and NTILE scoring.
-- Behavioral customer segmentation at scale.
-- Association rule mining for product affinity discovery.
-- Multi-page interactive dashboard connected to a live database.
-- Docker-based reproducible warehouse environment.
+- PostgreSQL-first analytics warehouse using a local Dockerized database.
+- Reproducible raw CSV loading through `src/database_loader.py`.
+- dbt Core sources, staging models, intermediate models, star schema, KPI marts, and analysis marts.
+- Tested model contracts with `not_null`, `unique`, `relationships`, `accepted_values`, and custom grain tests.
+- SQL-first analysis files that query dbt marts rather than raw tables.
+- Behavioral customer segmentation without revenue, CLV, or predictive modeling.
+- Order-sequence cohort retention without unsupported calendar-date assumptions.
+- Product affinity analysis framed as SQL-based BI, not machine learning.
+- Power BI dashboard planning connected to dbt marts.
+- Architecture and data dictionary documentation suitable for a portfolio review.
+
+---
+
+## Data Limitations
+
+- The Instacart dataset does not include product prices.
+- Revenue, profit, margin, AOV, and CLV should not be calculated.
+- The dataset does not include real calendar order dates.
+- Cohort retention is based on observed order sequence, not weekly or monthly calendar cohorts.
+- `days_since_prior_order` supports a reorder-gap proxy, not true calendar recency.
+- Basket affinity is product co-occurrence analysis, not prediction.
+- High lift does not imply causation.
+- Customer segments are behavioral engagement groups, not financial RFM segments.
+- Final metric values should be filled only after PostgreSQL load, dbt run, dbt tests, and analysis SQL validation.

@@ -15,23 +15,131 @@ BRAVE_BROWSER_PATH = "/Applications/Brave Browser.app/Contents/MacOS/Brave Brows
 if EXPORT_MODE and "BROWSER_PATH" not in os.environ and Path(BRAVE_BROWSER_PATH).exists():
     os.environ["BROWSER_PATH"] = BRAVE_BROWSER_PATH
 
+_RFM_FALLBACK_CACHE = None
+
 # ── CONNECTION ────────────────────────────────────────────────
 ENGINE = create_engine(
     "postgresql://postgres:postgres@localhost:5434/instacart_db"
 )
+
+def _pg_ntile(values, sort_frame, sort_columns, ascending, buckets=5):
+    n = len(values)
+    base_size, remainder = divmod(n, buckets)
+    tiles = []
+    for bucket in range(1, buckets + 1):
+        tiles.extend([bucket] * (base_size + (1 if bucket <= remainder else 0)))
+
+    ordered_index = sort_frame.sort_values(
+        sort_columns,
+        ascending=ascending,
+        kind="mergesort",
+    ).index
+    return pd.Series(tiles, index=ordered_index).sort_index()
+
+
+def _rfm_segments_from_raw_csv():
+    """Computed export fallback; mirrors sql/rfm_analysis.sql without hardcoded counts."""
+    global _RFM_FALLBACK_CACHE
+    if _RFM_FALLBACK_CACHE is not None:
+        return _RFM_FALLBACK_CACHE.copy()
+
+    orders = pd.read_csv(
+        "data/raw/orders.csv",
+        usecols=["order_id", "user_id", "order_number", "days_since_prior_order"],
+    )
+    latest_orders = (
+        orders.sort_values(["user_id", "order_number", "order_id"])
+        .groupby("user_id", as_index=False)
+        .tail(1)[["user_id", "order_id", "order_number", "days_since_prior_order"]]
+        .rename(columns={
+            "order_id": "latest_order_id",
+            "order_number": "latest_order_number",
+            "days_since_prior_order": "latest_reorder_gap_days",
+        })
+    )
+    customer_metrics = (
+        orders.groupby("user_id", as_index=False)
+        .agg(total_orders=("order_id", "nunique"))
+        .merge(latest_orders, on="user_id", how="left")
+    )
+
+    order_to_user = orders.set_index("order_id")["user_id"]
+    item_totals = {}
+    for chunk in pd.read_csv("data/raw/order_products.csv", usecols=["order_id"], chunksize=2_000_000):
+        user_ids = chunk["order_id"].map(order_to_user)
+        for user_id, count in user_ids.value_counts(sort=False).items():
+            item_totals[int(user_id)] = item_totals.get(int(user_id), 0) + int(count)
+
+    item_metrics = pd.DataFrame({
+        "user_id": list(item_totals.keys()),
+        "total_items_purchased": list(item_totals.values()),
+    })
+    customer_metrics = customer_metrics.merge(item_metrics, on="user_id", how="left")
+    customer_metrics["total_items_purchased"] = customer_metrics["total_items_purchased"].fillna(0).astype(int)
+    customer_metrics["avg_items_per_order"] = (
+        customer_metrics["total_items_purchased"] / customer_metrics["total_orders"]
+    ).round(2)
+
+    customer_metrics["recency_gap_sort"] = customer_metrics["latest_reorder_gap_days"].fillna(999999.0)
+    customer_metrics["recency_score"] = 6 - _pg_ntile(
+        customer_metrics["recency_gap_sort"],
+        customer_metrics,
+        ["recency_gap_sort", "user_id"],
+        [True, True],
+    )
+    customer_metrics["frequency_score"] = _pg_ntile(
+        customer_metrics["total_orders"],
+        customer_metrics,
+        ["total_orders", "user_id"],
+        [True, True],
+    )
+    customer_metrics["value_score"] = _pg_ntile(
+        customer_metrics["total_items_purchased"],
+        customer_metrics,
+        ["total_items_purchased", "user_id"],
+        [True, True],
+    )
+    customer_metrics["rfm_score"] = (
+        customer_metrics["recency_score"]
+        + customer_metrics["frequency_score"]
+        + customer_metrics["value_score"]
+    )
+
+    customer_metrics["customer_segment"] = "Loyal Customers"
+    customer_metrics.loc[customer_metrics["rfm_score"] >= 13, "customer_segment"] = "Champions"
+    customer_metrics.loc[customer_metrics["rfm_score"] <= 5, "customer_segment"] = "Hibernating / Lost"
+    customer_metrics.loc[
+        (customer_metrics["recency_score"] <= 3)
+        & (customer_metrics["rfm_score"].between(6, 9)),
+        "customer_segment",
+    ] = "At Risk"
+    customer_metrics.loc[
+        (customer_metrics["frequency_score"] <= 2)
+        & (customer_metrics["recency_score"] >= 4),
+        "customer_segment",
+    ] = "New Customers"
+
+    _RFM_FALLBACK_CACHE = customer_metrics
+    return customer_metrics.copy()
+
 
 def _fallback_query(sql):
     """Local CSV fallback used only for static portfolio exports."""
     query = " ".join(sql.lower().split())
 
     if "from customer_rfm_segments" in query:
-        return pd.DataFrame([
-            {"customer_segment": "Hibernating / Lost", "customer_count": 58251, "avg_orders": 0, "avg_items": 0},
-            {"customer_segment": "At Risk", "customer_count": 55092, "avg_orders": 0, "avg_items": 0},
-            {"customer_segment": "Loyal Customers", "customer_count": 52655, "avg_orders": 0, "avg_items": 0},
-            {"customer_segment": "New Customers", "customer_count": 24233, "avg_orders": 0, "avg_items": 0},
-            {"customer_segment": "Champions", "customer_count": 15978, "avg_orders": 0, "avg_items": 0},
-        ])
+        source = _rfm_segments_from_raw_csv()
+        return (
+            source.groupby("customer_segment", as_index=False)
+            .agg(
+                customer_count=("user_id", "count"),
+                avg_orders=("total_orders", "mean"),
+                avg_items=("total_items_purchased", "mean"),
+            )
+            .round({"avg_orders": 1, "avg_items": 1})
+            .sort_values("customer_count", ascending=False)
+            .reset_index(drop=True)
+        )
 
     if "from order_products op" in query and "join departments" in query:
         products = pd.read_csv("data/raw/products.csv", usecols=["product_id", "department_id"])
@@ -455,7 +563,7 @@ app.layout = dbc.Container([
     html.Hr(style={'borderColor':GRID}),
     html.P(
         "Instacart Intelligence Platform · 3.4M Orders · 206K Customers · "
-        "50K+ Products · Built with Python, PostgreSQL, Plotly Dash",
+        "49K Products · Built with Python, PostgreSQL, Plotly Dash",
         className='text-center text-muted',
         style={'fontSize':'0.72rem','letterSpacing':'0.08em'}
     ),
@@ -596,7 +704,10 @@ def _export_basket_affinity_map(output_path):
     fig.add_annotation(
         x=highlight["support"],
         y=highlight["confidence"],
-        text="<b>Bananas -> Organic Strawberries</b><br>4.12x lift",
+        text=(
+            f"<b>{highlight['antecedents']} -> {highlight['consequents']}</b><br>"
+            f"{highlight['lift']:.2f}x lift"
+        ),
         showarrow=True,
         arrowcolor=PORTFOLIO_ORANGE,
         arrowwidth=2,

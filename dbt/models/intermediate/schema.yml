@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: int_order_item_enriched
+    description: Order item lines enriched with order timing, customer, product, aisle, and department attributes.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+      - name: user_id
+        tests:
+          - not_null
+      - name: eval_set
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['prior', 'train', 'test']
+      - name: reordered
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: product_name
+        tests:
+          - not_null
+      - name: aisle_name
+        tests:
+          - not_null
+      - name: department_name
+        tests:
+          - not_null
+
+  - name: int_customer_order_history
+    description: User-level order lifecycle summary built from staged orders and basket line items.
+    columns:
+      - name: user_id
+        tests:
+          - not_null
+          - unique
+      - name: total_orders
+        tests:
+          - not_null
+      - name: first_order_number
+        tests:
+          - not_null
+      - name: latest_order_number
+        tests:
+          - not_null
+      - name: total_items_purchased
+        tests:
+          - not_null
+      - name: avg_basket_size
+        tests:
+          - not_null

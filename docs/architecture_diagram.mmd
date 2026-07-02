@@ -1,0 +1,24 @@
+flowchart TD
+    csv[Instacart CSV files<br/>data/raw]
+    loader[Python loader<br/>src/database_loader.py]
+    raw[(PostgreSQL raw schema<br/>raw.departments<br/>raw.aisles<br/>raw.products<br/>raw.orders<br/>raw.order_products)]
+    staging[dbt staging models<br/>type cleanup and light renaming]
+    intermediate[dbt intermediate models<br/>enriched order items<br/>customer order history]
+    core[dbt core star schema<br/>dim_customers<br/>dim_products<br/>dim_orders<br/>fact_order_items]
+    marts[dbt KPI and analysis marts<br/>executive KPIs<br/>product performance<br/>customer segments<br/>cohort retention<br/>basket affinity]
+    sql[SQL analysis files<br/>analysis/*.sql]
+    pbi[Power BI Desktop<br/>connect to dbt marts only]
+    memo[Recommendation memo<br/>analysis/recommendation_memo.md]
+    readme[Final README case study<br/>validated metrics only]
+
+    csv --> loader
+    loader --> raw
+    raw --> staging
+    staging --> intermediate
+    intermediate --> core
+    core --> marts
+    marts --> sql
+    marts --> pbi
+    sql --> memo
+    pbi --> memo
+    memo --> readme

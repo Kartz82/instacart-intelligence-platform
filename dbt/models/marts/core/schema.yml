@@ -1,0 +1,160 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: Customer dimension with one row per user and non-financial order lifecycle attributes.
+    columns:
+      - name: user_id
+        description: Instacart anonymized customer identifier.
+        tests:
+          - not_null
+          - unique
+      - name: total_orders
+        description: Count of observed orders for the customer.
+        tests:
+          - not_null
+      - name: first_order_number
+        tests:
+          - not_null
+      - name: latest_order_number
+        tests:
+          - not_null
+      - name: total_items_purchased
+        tests:
+          - not_null
+      - name: customer_reorder_rate
+        description: Customer-level share of purchased line items marked as reordered.
+        tests:
+          - not_null
+
+  - name: dim_products
+    description: Product dimension enriched with aisle and department names.
+    columns:
+      - name: product_id
+        description: Product identifier.
+        tests:
+          - not_null
+          - unique
+      - name: product_name
+        tests:
+          - not_null
+      - name: aisle_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_aisles')
+                field: aisle_id
+      - name: aisle_name
+        tests:
+          - not_null
+      - name: department_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_departments')
+                field: department_id
+      - name: department_name
+        tests:
+          - not_null
+
+  - name: dim_orders
+    description: Order dimension with one row per order and order-level basket attributes.
+    columns:
+      - name: order_id
+        description: Order identifier.
+        tests:
+          - not_null
+          - unique
+      - name: user_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: user_id
+      - name: eval_set
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['prior', 'train', 'test']
+      - name: order_dow
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6]
+      - name: order_day_of_week
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      - name: order_hour_of_day
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+      - name: basket_size
+        tests:
+          - not_null
+
+  - name: fact_order_items
+    description: Fact table with one row per order-product line item.
+    columns:
+      - name: order_id
+        description: Order identifier.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_orders')
+                field: order_id
+      - name: product_id
+        description: Product identifier.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: user_id
+        description: Customer identifier carried on the fact for analytic convenience.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: user_id
+      - name: add_to_cart_order
+        tests:
+          - not_null
+      - name: reordered
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: order_dow
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6]
+      - name: order_hour_of_day
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+      - name: aisle_id
+        tests:
+          - not_null
+      - name: department_id
+        tests:
+          - not_null
