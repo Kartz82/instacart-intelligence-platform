@@ -2,8 +2,13 @@ version: 2
 
 sources:
   - name: raw
-    description: Source-shaped Instacart tables loaded into PostgreSQL by src/database_loader.py.
-    schema: raw
+    description: >
+      Source-shaped Instacart tables. Loaded into PostgreSQL by src/database_loader.py
+      or into BigQuery by ingestion/load_bigquery.py; both loaders produce identical
+      table and column names so these models run against either warehouse.
+      The schema resolves to the Postgres schema `raw` by default and to the BigQuery
+      dataset named in DBT_RAW_SCHEMA when running against the bigquery target.
+    schema: "{{ env_var('DBT_RAW_SCHEMA', 'raw') }}"
     tables:
       - name: departments
         description: Department lookup table.

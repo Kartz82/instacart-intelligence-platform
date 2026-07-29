@@ -1,6 +1,6 @@
 select
-    product_id::integer as product_id,
-    product_name::varchar as product_name,
-    aisle_id::integer as aisle_id,
-    department_id::integer as department_id
+    cast(product_id as {{ dbt.type_int() }}) as product_id,
+    cast(product_name as {{ dbt.type_string() }}) as product_name,
+    cast(aisle_id as {{ dbt.type_int() }}) as aisle_id,
+    cast(department_id as {{ dbt.type_int() }}) as department_id
 from {{ source('raw', 'products') }}

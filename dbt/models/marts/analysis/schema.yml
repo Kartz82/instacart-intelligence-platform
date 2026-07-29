@@ -72,3 +72,67 @@ models:
         description: Confidence A to B divided by product B order share.
         tests:
           - not_null
+
+  - name: mart_time_patterns
+    description: >
+      Order volume and reorder intensity across day-of-week x hour-of-day. Source for
+      the Temporal Behavior heatmap. Built off dim_time so the 168-slot grid is always
+      complete. Order counts come from dim_orders and item counts from fact_order_items,
+      aggregated separately so orders are not multiplied by basket size.
+    columns:
+      - name: time_key
+        description: Surrogate key inherited from dim_time.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_time')
+                field: time_key
+      - name: order_dow
+        tests:
+          - not_null
+      - name: order_day_of_week
+        tests:
+          - not_null
+      - name: order_hour_of_day
+        tests:
+          - not_null
+      - name: daypart
+        tests:
+          - not_null
+      - name: is_weekend
+        tests:
+          - not_null
+      - name: total_orders
+        description: Orders placed in this day-of-week x hour slot.
+        tests:
+          - not_null
+      - name: distinct_customers
+        tests:
+          - not_null
+      - name: total_order_items
+        description: Order line items in this slot.
+        tests:
+          - not_null
+      - name: reordered_items
+        tests:
+          - not_null
+      - name: reorder_rate
+        description: Reordered items divided by total order items in this slot.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
+      - name: share_of_total_orders
+        description: Slot orders divided by all orders on the platform.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true

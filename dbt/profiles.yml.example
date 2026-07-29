@@ -1,3 +1,18 @@
+# Copy to ~/.dbt/profiles.yml, or run dbt with --profiles-dir pointing at this folder.
+#
+# Two targets are supported and the models are written to run unchanged on both:
+#
+#   dev       PostgreSQL 15 in Docker (docker compose up -d). This is the default and
+#             the target every published figure in the README was produced on.
+#   bigquery  BigQuery, loaded by ingestion/load_bigquery.py. Requires GCP credentials.
+#
+# Portability is not accidental: the models use dbt cross-database macros
+# ({{ dbt.type_int() }}, {{ dbt.type_numeric() }}, {{ dbt.type_string() }},
+# {{ dbt.type_float() }}) instead of Postgres-only casts and FILTER clauses.
+#
+#   dbt build                       # runs against dev / Postgres
+#   dbt build --target bigquery     # runs against BigQuery
+
 instacart_analytics:
   target: dev
   outputs:
@@ -11,3 +26,19 @@ instacart_analytics:
       schema: analytics
       threads: 4
       keepalives_idle: 0
+
+    bigquery:
+      type: bigquery
+      # service-account reads a JSON key file; in CI the key is written from a secret.
+      # Use method: oauth instead for local interactive runs after `gcloud auth login`.
+      method: service-account
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      project: "{{ env_var('GCP_PROJECT') }}"
+      dataset: "{{ env_var('BQ_DATASET', 'instacart_analytics') }}"
+      location: "{{ env_var('BQ_LOCATION', 'US') }}"
+      threads: 8
+      # The ~32M-row fact and the basket-affinity self-join are the expensive jobs.
+      # Raise this if a full build trips the default 300s per-model timeout.
+      job_execution_timeout_seconds: 3600
+      job_retries: 1
+      priority: interactive

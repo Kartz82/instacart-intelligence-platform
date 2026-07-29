@@ -43,13 +43,13 @@ select
     count(*) as total_orders,
     min(order_number) as first_order_number,
     max(order_number) as latest_order_number,
-    max(order_id) filter (where first_order_rank = 1) as first_order_id,
-    max(order_id) filter (where latest_order_rank = 1) as latest_order_id,
+    max(case when first_order_rank = 1 then order_id end) as first_order_id,
+    max(case when latest_order_rank = 1 then order_id end) as latest_order_id,
     sum(basket_size) as total_items_purchased,
-    avg(basket_size)::numeric(10, 2) as avg_basket_size,
+    round(cast(avg(basket_size) as {{ dbt.type_numeric() }}), 2) as avg_basket_size,
     sum(reordered_items) as total_reordered_items,
-    avg(days_since_prior_order)::numeric(10, 2) as avg_days_since_prior_order,
-    max(days_since_prior_order) filter (where latest_order_rank = 1) as latest_days_since_prior_order,
+    round(cast(avg(days_since_prior_order) as {{ dbt.type_numeric() }}), 2) as avg_days_since_prior_order,
+    max(case when latest_order_rank = 1 then days_since_prior_order end) as latest_days_since_prior_order,
     min(order_hour_of_day) as earliest_order_hour,
     max(order_hour_of_day) as latest_order_hour
 from orders_ranked

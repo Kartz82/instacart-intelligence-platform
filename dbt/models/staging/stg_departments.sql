@@ -1,4 +1,4 @@
 select
-    department_id::integer as department_id,
-    department::varchar as department_name
+    cast(department_id as {{ dbt.type_int() }}) as department_id,
+    cast(department as {{ dbt.type_string() }}) as department_name
 from {{ source('raw', 'departments') }}

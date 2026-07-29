@@ -138,4 +138,114 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['High Engagement', 'Loyal Routine', 'At Risk', 'Early Lifecycle', 'Moderate Engagement']
+                values: ['High Engagement', 'Loyal Routine', 'At Risk', 'Moderate Engagement']
+
+  - name: mart_reorder_behavior
+    description: >
+      Reorder behaviour at the department x aisle grain, benchmarked against the
+      department and platform reorder rates. Product-level reorder rate lives in
+      mart_product_performance and customer-level in dim_customers; this mart supplies
+      the category rollup, which is the cut small enough to import whole into the BI
+      layer. Low-volume aisles are flagged rather than filtered so category totals stay
+      complete.
+    columns:
+      - name: aisle_id
+        description: Aisle identifier; unique together with department_id.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_aisles')
+                field: aisle_id
+      - name: aisle_name
+        tests:
+          - not_null
+      - name: department_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_departments')
+                field: department_id
+      - name: department_name
+        tests:
+          - not_null
+      - name: total_order_items
+        description: Order line items in this department x aisle.
+        tests:
+          - not_null
+      - name: reordered_items
+        tests:
+          - not_null
+      - name: distinct_orders
+        tests:
+          - not_null
+      - name: distinct_customers
+        tests:
+          - not_null
+      - name: distinct_products
+        tests:
+          - not_null
+      - name: reorder_rate
+        description: Reordered items divided by total order items for this aisle.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
+      - name: department_reorder_rate
+        description: Reorder rate for the parent department, repeated on every aisle row.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
+      - name: platform_reorder_rate
+        description: Platform-wide reorder rate, repeated on every row as a constant benchmark.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
+      - name: reorder_rate_vs_department
+        description: Aisle reorder rate minus its department reorder rate. Negative means the aisle underperforms its department.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+                inclusive: true
+      - name: reorder_rate_vs_platform
+        description: Aisle reorder rate minus the platform reorder rate.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+                inclusive: true
+      - name: below_volume_floor
+        description: True where the aisle has fewer than 1000 order line items and its rate is unstable.
+        tests:
+          - not_null
+      - name: share_of_order_items
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+                inclusive: true
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - department_id
+              - aisle_id

@@ -1,9 +1,9 @@
 select
-    order_id::integer as order_id,
-    user_id::integer as user_id,
-    eval_set::varchar as eval_set,
-    order_number::integer as order_number,
-    order_dow::integer as order_dow,
+    cast(order_id as {{ dbt.type_int() }}) as order_id,
+    cast(user_id as {{ dbt.type_int() }}) as user_id,
+    cast(eval_set as {{ dbt.type_string() }}) as eval_set,
+    cast(order_number as {{ dbt.type_int() }}) as order_number,
+    cast(order_dow as {{ dbt.type_int() }}) as order_dow,
     case order_dow
         when 0 then 'Sunday'
         when 1 then 'Monday'
@@ -13,6 +13,6 @@ select
         when 5 then 'Friday'
         when 6 then 'Saturday'
     end as order_day_of_week,
-    order_hour_of_day::integer as order_hour_of_day,
-    days_since_prior_order::double precision as days_since_prior_order
+    cast(order_hour_of_day as {{ dbt.type_int() }}) as order_hour_of_day,
+    cast(days_since_prior_order as {{ dbt.type_float() }}) as days_since_prior_order
 from {{ source('raw', 'orders') }}

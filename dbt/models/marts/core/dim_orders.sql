@@ -19,11 +19,12 @@ select
     coalesce(order_items.basket_size, 0) as basket_size,
     coalesce(order_items.reordered_items, 0) as reordered_items,
     case
-        when coalesce(order_items.basket_size, 0) = 0 then 0::numeric(10, 4)
-        else (
-            coalesce(order_items.reordered_items, 0)::numeric
-            / order_items.basket_size
-        )::numeric(10, 4)
+        when coalesce(order_items.basket_size, 0) = 0 then cast(0 as {{ dbt.type_numeric() }})
+        else round(
+            cast(coalesce(order_items.reordered_items, 0) as {{ dbt.type_numeric() }})
+            / order_items.basket_size,
+            4
+        )
     end as order_reorder_rate
 from {{ ref('stg_orders') }} as orders
 left join order_items

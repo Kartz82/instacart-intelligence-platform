@@ -158,3 +158,50 @@ models:
       - name: department_id
         tests:
           - not_null
+
+  - name: dim_time
+    description: >
+      Conformed time dimension at the day-of-week x hour-of-day grain. The Instacart
+      dataset carries no absolute timestamps, so this is the finest real time grain
+      available and is always exactly 168 rows (7 days x 24 hours). Generated rather
+      than derived from the fact table so that slots with no orders still appear in
+      the heatmap.
+    columns:
+      - name: time_key
+        description: Surrogate key over order_dow and order_hour_of_day.
+        tests:
+          - not_null
+          - unique
+      - name: order_dow
+        description: Day of week as encoded in the source data, 0 = Sunday.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6]
+      - name: order_hour_of_day
+        description: Hour of day, 0-23.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+      - name: order_day_of_week
+        description: Weekday label for BI presentation.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      - name: is_weekend
+        description: True for Saturday and Sunday.
+        tests:
+          - not_null
+      - name: daypart
+        description: Coarse time band used for grouping in the BI layer.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Overnight', 'Morning', 'Midday', 'Afternoon', 'Evening']

@@ -1,0 +1,90 @@
+name: dbt build (BigQuery)
+
+# Scheduled rebuild of the warehouse against BigQuery.
+#
+# Weekly rather than daily on purpose: the source data is a static Kaggle export, so a
+# daily rebuild would burn BigQuery slots re-deriving identical results. The schedule
+# exists to prove the pipeline still runs green; workflow_dispatch covers ad-hoc runs.
+#
+# Required repository secrets:
+#   GCP_SA_KEY       service-account JSON key with BigQuery Data Editor + Job User
+#   GCP_PROJECT      GCP project id
+#   BQ_DATASET       dataset for the dbt-built models, e.g. instacart_analytics
+#   BQ_RAW_DATASET   dataset holding the raw loaded tables, e.g. instacart_raw
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "dbt/**"
+      - ".github/workflows/dbt_build.yml"
+
+concurrency:
+  group: dbt-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+      BQ_DATASET: ${{ secrets.BQ_DATASET }}
+      DBT_RAW_SCHEMA: ${{ secrets.BQ_RAW_DATASET }}
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-key.json
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dbt and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write the service-account key
+        run: |
+          printf '%s' '${{ secrets.GCP_SA_KEY }}' > "$GOOGLE_APPLICATION_CREDENTIALS"
+          chmod 600 "$GOOGLE_APPLICATION_CREDENTIALS"
+
+      - name: Install dbt packages
+        run: dbt deps --project-dir dbt --profiles-dir dbt
+
+      - name: Validate the project parses
+        run: dbt parse --project-dir dbt --profiles-dir dbt --target bigquery
+
+      # A pull request should not rebuild 32M rows. --empty materialises every model
+      # with LIMIT 0, which validates the SQL against BigQuery in minutes rather than
+      # hours, and it writes to a PR-scoped dataset so it cannot touch production.
+      - name: Validate models on pull requests
+        if: github.event_name == 'pull_request'
+        env:
+          BQ_DATASET: ${{ secrets.BQ_DATASET }}_ci_pr_${{ github.event.number }}
+        run: dbt build --project-dir dbt --profiles-dir dbt --target bigquery --empty
+
+      - name: Full build
+        if: github.event_name != 'pull_request'
+        run: dbt build --project-dir dbt --profiles-dir dbt --target bigquery
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-run-results
+          path: |
+            dbt/target/run_results.json
+            dbt/target/manifest.json
+          retention-days: 14
+
+      - name: Remove the service-account key
+        if: always()
+        run: rm -f "$GOOGLE_APPLICATION_CREDENTIALS"

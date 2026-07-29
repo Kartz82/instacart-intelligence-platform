@@ -38,9 +38,10 @@ select
     retention.order_sequence_index + 1 as observed_order_number,
     cohort_size.starting_customers,
     retention.active_customers,
-    (
-        retention.active_customers::numeric
-        / nullif(cohort_size.starting_customers, 0)
-    )::numeric(10, 4) as retention_rate
+    round(
+        cast(retention.active_customers as {{ dbt.type_numeric() }})
+        / nullif(cohort_size.starting_customers, 0),
+        4
+    ) as retention_rate
 from retention
 cross join cohort_size

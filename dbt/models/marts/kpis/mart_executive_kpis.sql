@@ -1,21 +1,21 @@
 with order_item_metrics as (
     select
         count(*) as total_order_items,
-        avg(reordered)::numeric(10, 4) as reorder_rate
+        round(cast(avg(reordered) as {{ dbt.type_numeric() }}), 4) as reorder_rate
     from {{ ref('fact_order_items') }}
 ),
 
 order_metrics as (
     select
         count(*) as total_orders,
-        avg(basket_size)::numeric(10, 2) as average_basket_size
+        round(cast(avg(basket_size) as {{ dbt.type_numeric() }}), 2) as average_basket_size
     from {{ ref('dim_orders') }}
 ),
 
 customer_metrics as (
     select
         count(*) as total_customers,
-        avg(total_orders)::numeric(10, 2) as average_orders_per_customer
+        round(cast(avg(total_orders) as {{ dbt.type_numeric() }}), 2) as average_orders_per_customer
     from {{ ref('dim_customers') }}
 ),
 

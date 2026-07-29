@@ -52,25 +52,28 @@ select
     product_a_counts.orders_with_product as orders_with_a,
     product_b_counts.orders_with_product as orders_with_b,
     product_pairs.orders_with_both,
-    (
-        product_pairs.orders_with_both::numeric
-        / nullif(total_orders.total_orders, 0)
-    )::numeric(10, 6) as support,
-    (
-        product_pairs.orders_with_both::numeric
-        / nullif(product_a_counts.orders_with_product, 0)
-    )::numeric(10, 6) as confidence_a_to_b,
-    (
+    round(
+        cast(product_pairs.orders_with_both as {{ dbt.type_numeric() }})
+        / nullif(total_orders.total_orders, 0),
+        6
+    ) as support,
+    round(
+        cast(product_pairs.orders_with_both as {{ dbt.type_numeric() }})
+        / nullif(product_a_counts.orders_with_product, 0),
+        6
+    ) as confidence_a_to_b,
+    round(
         (
-            product_pairs.orders_with_both::numeric
+            cast(product_pairs.orders_with_both as {{ dbt.type_numeric() }})
             / nullif(product_a_counts.orders_with_product, 0)
         )
         / nullif(
-            product_b_counts.orders_with_product::numeric
+            cast(product_b_counts.orders_with_product as {{ dbt.type_numeric() }})
             / nullif(total_orders.total_orders, 0),
             0
-        )
-    )::numeric(10, 6) as lift
+        ),
+        6
+    ) as lift
 from product_pairs
 inner join {{ ref('dim_products') }} as product_a
     on product_pairs.product_a_id = product_a.product_id

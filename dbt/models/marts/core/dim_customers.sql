@@ -9,8 +9,12 @@ select
     avg_basket_size,
     total_reordered_items,
     case
-        when total_items_purchased = 0 then 0::numeric(10, 4)
-        else (total_reordered_items::numeric / total_items_purchased)::numeric(10, 4)
+        when total_items_purchased = 0 then cast(0 as {{ dbt.type_numeric() }})
+        else round(
+            cast(total_reordered_items as {{ dbt.type_numeric() }})
+            / total_items_purchased,
+            4
+        )
     end as customer_reorder_rate,
     avg_days_since_prior_order,
     latest_days_since_prior_order,
