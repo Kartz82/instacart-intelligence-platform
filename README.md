@@ -327,8 +327,7 @@ instacart-intelligence-platform/
 │   └── resume_bullets.md
 ├── ingestion/
 │   └── load_bigquery.py             # CSV -> (GCS) -> BigQuery, with --dry-run
-├── reports/
-├── screenshots/                     # Power BI captures
+├── reports/                         # Dashboard captures and exported figures
 ├── sql/
 │   ├── schema.sql
 │   ├── rfm_analysis.sql
@@ -419,24 +418,63 @@ docker compose down -v
 
 ---
 
-## Reports
+## Dashboard
+
+An interactive Plotly Dash application reads the dbt marts directly - no raw-table scans,
+no re-aggregation in the BI layer. Six pages, mirroring the page structure in
+`bi/powerbi_dashboard_plan.md`.
+
+```bash
+docker compose up -d
+python3 dashboard/app.py     # http://localhost:8050
+```
 
 ### Executive Overview
-![Executive Overview](reports/executive_overview.png)
+Headline KPIs, platform reorder rate, and the retention curve.
 
-### Customer Analytics
-![Customer Analytics](reports/customer_analytics.png)
+![Executive Overview](reports/executive-overview.png)
 
-### Product & Category
-![Product & Category](reports/product_category.png)
+### Customer Segments
+Four behavioural tiers on a single-hue ordinal ramp, read low to high engagement.
 
-### Market Basket Analysis
-![Market Basket Analysis](reports/market_basket.png)
+![Customer Segments](reports/customer-segments.png)
 
-Additional existing report assets:
-- `reports/basket_affinity_map.png`
-- `reports/category_performance.png`
-- `reports/customer_segments.png`
+### Demand Patterns
+The day-of-week x hour demand matrix built from the generated 168-slot `dim_time` grid,
+plus weekly order volume.
+
+![Demand Patterns](reports/demand-patterns.png)
+
+### Category Performance
+Department and aisle mix as a treemap, and aisle loyalty against the platform average as
+a diverging bar - zero is the meaningful centre, so the encoding diverges from it.
+
+![Category Performance](reports/category-performance.png)
+
+### Product Performance
+Top 20 products by order volume, shaded by reorder rate.
+
+![Product Performance](reports/product-performance.png)
+
+### Basket & Cross-sell
+Pair affinity by support and confidence, sized and shaded by lift, with the ranked rules
+table beneath it.
+
+![Basket and Cross-sell](reports/basket-cross-sell.png)
+
+### Visual design
+
+Colour is assigned by the job it does rather than per chart: one blue sequential ramp for
+magnitude, four steps of that same hue for the ranked engagement tiers, and a blue-red
+diverging pair with a grey midpoint where a value sits above or below a baseline. The
+categorical palette was checked with a contrast and colour-vision validator rather than
+chosen by eye, and multi-hue "rainbow" scales were removed - they carry no perceptual
+order, so a reader cannot rank two colours without consulting the legend.
+
+Static figures exported for the portfolio site, on the dark surface:
+- `reports/basket-affinity-map.png`
+- `reports/category-performance-figure.png`
+- `reports/customer-segments-figure.png`
 
 Power BI screenshot placeholders are documented in `bi/powerbi_dashboard_plan.md` and should be exported only after dashboard validation.
 
