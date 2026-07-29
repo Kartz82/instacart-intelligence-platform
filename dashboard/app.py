@@ -15,305 +15,103 @@ BRAVE_BROWSER_PATH = "/Applications/Brave Browser.app/Contents/MacOS/Brave Brows
 if EXPORT_MODE and "BROWSER_PATH" not in os.environ and Path(BRAVE_BROWSER_PATH).exists():
     os.environ["BROWSER_PATH"] = BRAVE_BROWSER_PATH
 
-_RFM_FALLBACK_CACHE = None
 
 # ── CONNECTION ────────────────────────────────────────────────
 ENGINE = create_engine(
     "postgresql://postgres:postgres@localhost:5434/instacart_db"
 )
 
-def _pg_ntile(values, sort_frame, sort_columns, ascending, buckets=5):
-    n = len(values)
-    base_size, remainder = divmod(n, buckets)
-    tiles = []
-    for bucket in range(1, buckets + 1):
-        tiles.extend([bucket] * (base_size + (1 if bucket <= remainder else 0)))
-
-    ordered_index = sort_frame.sort_values(
-        sort_columns,
-        ascending=ascending,
-        kind="mergesort",
-    ).index
-    return pd.Series(tiles, index=ordered_index).sort_index()
-
-
-def _rfm_segments_from_raw_csv():
-    """Computed export fallback; mirrors sql/rfm_analysis.sql without hardcoded counts."""
-    global _RFM_FALLBACK_CACHE
-    if _RFM_FALLBACK_CACHE is not None:
-        return _RFM_FALLBACK_CACHE.copy()
-
-    orders = pd.read_csv(
-        "data/raw/orders.csv",
-        usecols=["order_id", "user_id", "order_number", "days_since_prior_order"],
-    )
-    latest_orders = (
-        orders.sort_values(["user_id", "order_number", "order_id"])
-        .groupby("user_id", as_index=False)
-        .tail(1)[["user_id", "order_id", "order_number", "days_since_prior_order"]]
-        .rename(columns={
-            "order_id": "latest_order_id",
-            "order_number": "latest_order_number",
-            "days_since_prior_order": "latest_reorder_gap_days",
-        })
-    )
-    customer_metrics = (
-        orders.groupby("user_id", as_index=False)
-        .agg(total_orders=("order_id", "nunique"))
-        .merge(latest_orders, on="user_id", how="left")
-    )
-
-    order_to_user = orders.set_index("order_id")["user_id"]
-    item_totals = {}
-    for chunk in pd.read_csv("data/raw/order_products.csv", usecols=["order_id"], chunksize=2_000_000):
-        user_ids = chunk["order_id"].map(order_to_user)
-        for user_id, count in user_ids.value_counts(sort=False).items():
-            item_totals[int(user_id)] = item_totals.get(int(user_id), 0) + int(count)
-
-    item_metrics = pd.DataFrame({
-        "user_id": list(item_totals.keys()),
-        "total_items_purchased": list(item_totals.values()),
-    })
-    customer_metrics = customer_metrics.merge(item_metrics, on="user_id", how="left")
-    customer_metrics["total_items_purchased"] = customer_metrics["total_items_purchased"].fillna(0).astype(int)
-    customer_metrics["avg_items_per_order"] = (
-        customer_metrics["total_items_purchased"] / customer_metrics["total_orders"]
-    ).round(2)
-
-    customer_metrics["recency_gap_sort"] = customer_metrics["latest_reorder_gap_days"].fillna(999999.0)
-    customer_metrics["recency_score"] = 6 - _pg_ntile(
-        customer_metrics["recency_gap_sort"],
-        customer_metrics,
-        ["recency_gap_sort", "user_id"],
-        [True, True],
-    )
-    customer_metrics["frequency_score"] = _pg_ntile(
-        customer_metrics["total_orders"],
-        customer_metrics,
-        ["total_orders", "user_id"],
-        [True, True],
-    )
-    customer_metrics["value_score"] = _pg_ntile(
-        customer_metrics["total_items_purchased"],
-        customer_metrics,
-        ["total_items_purchased", "user_id"],
-        [True, True],
-    )
-    customer_metrics["rfm_score"] = (
-        customer_metrics["recency_score"]
-        + customer_metrics["frequency_score"]
-        + customer_metrics["value_score"]
-    )
-
-    customer_metrics["customer_segment"] = "Loyal Customers"
-    customer_metrics.loc[customer_metrics["rfm_score"] >= 13, "customer_segment"] = "Champions"
-    customer_metrics.loc[customer_metrics["rfm_score"] <= 5, "customer_segment"] = "Hibernating / Lost"
-    customer_metrics.loc[
-        (customer_metrics["recency_score"] <= 3)
-        & (customer_metrics["rfm_score"].between(6, 9)),
-        "customer_segment",
-    ] = "At Risk"
-    customer_metrics.loc[
-        (customer_metrics["frequency_score"] <= 2)
-        & (customer_metrics["recency_score"] >= 4),
-        "customer_segment",
-    ] = "New Customers"
-
-    _RFM_FALLBACK_CACHE = customer_metrics
-    return customer_metrics.copy()
-
-
-def _fallback_query(sql):
-    """Local CSV fallback used only for static portfolio exports."""
-    query = " ".join(sql.lower().split())
-
-    if "from customer_rfm_segments" in query:
-        source = _rfm_segments_from_raw_csv()
-        return (
-            source.groupby("customer_segment", as_index=False)
-            .agg(
-                customer_count=("user_id", "count"),
-                avg_orders=("total_orders", "mean"),
-                avg_items=("total_items_purchased", "mean"),
-            )
-            .round({"avg_orders": 1, "avg_items": 1})
-            .sort_values("customer_count", ascending=False)
-            .reset_index(drop=True)
-        )
-
-    if "from order_products op" in query and "join departments" in query:
-        products = pd.read_csv("data/raw/products.csv", usecols=["product_id", "department_id"])
-        departments = pd.read_csv("data/raw/departments.csv")
-        product_dept = products.merge(departments, on="department_id", how="left")
-        product_dept = product_dept.set_index("product_id")["department"]
-
-        totals = {}
-        reorders = {}
-        for chunk in pd.read_csv(
-            "data/raw/order_products.csv",
-            usecols=["product_id", "reordered"],
-            chunksize=1_000_000,
-        ):
-            chunk["department"] = chunk["product_id"].map(product_dept)
-            grouped = chunk.groupby("department")["reordered"].agg(["count", "sum"])
-            for department, row in grouped.iterrows():
-                totals[department] = totals.get(department, 0) + int(row["count"])
-                reorders[department] = reorders.get(department, 0) + int(row["sum"])
-
-        df = pd.DataFrame({
-            "department": list(totals.keys()),
-            "total_purchases": list(totals.values()),
-        })
-        df["reorder_rate"] = df["department"].map(
-            lambda d: round(reorders.get(d, 0) / totals[d], 3)
-        )
-        return df.sort_values("total_purchases", ascending=False).head(15).reset_index(drop=True)
-
-    if "from order_products op" in query and "join products" in query:
-        products = pd.read_csv("data/raw/products.csv", usecols=["product_id", "product_name"])
-        product_names = products.set_index("product_id")["product_name"]
-
-        totals = {}
-        reorders = {}
-        for chunk in pd.read_csv(
-            "data/raw/order_products.csv",
-            usecols=["product_id", "reordered"],
-            chunksize=1_000_000,
-        ):
-            grouped = chunk.groupby("product_id")["reordered"].agg(["count", "sum"])
-            for product_id, row in grouped.iterrows():
-                product_id = int(product_id)
-                totals[product_id] = totals.get(product_id, 0) + int(row["count"])
-                reorders[product_id] = reorders.get(product_id, 0) + int(row["sum"])
-
-        df = pd.DataFrame({
-            "product_id": list(totals.keys()),
-            "purchase_count": list(totals.values()),
-        })
-        df["product_name"] = df["product_id"].map(product_names)
-        df["reorder_rate"] = df["product_id"].map(
-            lambda product_id: round(reorders.get(product_id, 0) / totals[product_id], 3)
-        )
-        return (
-            df.dropna(subset=["product_name"])
-            .sort_values("purchase_count", ascending=False)
-            .head(20)
-            .reset_index(drop=True)
-        )
-
-    if "order_hour_of_day" in query:
-        orders = pd.read_csv("data/raw/orders.csv", usecols=["order_hour_of_day"])
-        return (
-            orders.groupby("order_hour_of_day")
-            .size()
-            .reset_index(name="order_count")
-            .rename(columns={"order_hour_of_day": "hour"})
-            .sort_values("hour")
-        )
-
-    if "order_dow" in query:
-        orders = pd.read_csv("data/raw/orders.csv", usecols=["order_dow"])
-        return (
-            orders.groupby("order_dow")
-            .size()
-            .reset_index(name="order_count")
-            .rename(columns={"order_dow": "day_of_week"})
-            .sort_values("day_of_week")
-        )
-
-    if "count(distinct order_id)" in query:
-        orders = pd.read_csv("data/raw/orders.csv", usecols=["order_id"])
-        return pd.DataFrame({"n": [orders["order_id"].nunique()]})
-
-    if "count(distinct user_id)" in query:
-        orders = pd.read_csv("data/raw/orders.csv", usecols=["user_id"])
-        return pd.DataFrame({"n": [orders["user_id"].nunique()]})
-
-    if "count(distinct product_id)" in query:
-        products = pd.read_csv("data/raw/products.csv", usecols=["product_id"])
-        return pd.DataFrame({"n": [products["product_id"].nunique()]})
-
-    if "avg(reordered)" in query:
-        total_rows = 0
-        total_reorders = 0
-        for chunk in pd.read_csv("data/raw/order_products.csv", usecols=["reordered"], chunksize=1_000_000):
-            total_rows += len(chunk)
-            total_reorders += int(chunk["reordered"].sum())
-        return pd.DataFrame({"r": [round((total_reorders / total_rows) * 100, 1)]})
-
-    raise RuntimeError("No local CSV fallback is available for this query.")
-
 def q(sql):
-    try:
-        return pd.read_sql(sql, ENGINE)
-    except Exception:
-        if EXPORT_MODE:
-            return _fallback_query(sql)
-        raise
+    """Run a query against the warehouse.
+
+    There is deliberately no CSV fallback. Every query here reads a dbt mart, and the
+    marts are the only definition of these metrics - a local fallback would have to
+    reimplement that logic and would silently drift from it. If the warehouse is not
+    reachable, failing loudly is correct: the alternative is a dashboard that renders
+    numbers which no longer match the models.
+    """
+    return pd.read_sql(sql, ENGINE)
 
 # ── LOAD DATA ─────────────────────────────────────────────────
+# Every query below reads a dbt mart, never the raw tables or the 33.8M-row fact.
+# The marts are already aggregated to a BI-sized grain (mart_time_patterns is 168 rows,
+# mart_reorder_behavior 134, mart_executive_kpis 1), so the dashboard does no aggregation
+# of its own and the page loads without scanning the fact table. This is the same
+# separation the Power BI plan uses, and it is the reason the BI layer stays fast at
+# scale - see docs/decisions.md, decision 6.
+
 rfm = q("""
-    SELECT customer_segment,
-           COUNT(*)                    AS customer_count,
-           ROUND(AVG(total_orders),1)  AS avg_orders,
+    SELECT behavioral_segment            AS customer_segment,
+           COUNT(*)                      AS customer_count,
+           ROUND(AVG(total_orders),1)    AS avg_orders,
            ROUND(AVG(total_items_purchased),1) AS avg_items
-    FROM customer_rfm_segments
-    GROUP BY customer_segment
+    FROM analytics_kpis.mart_customer_segments
+    GROUP BY behavioral_segment
     ORDER BY customer_count DESC
 """)
 
 dept = q("""
-    SELECT d.department,
-           COUNT(op.order_id)          AS total_purchases,
-           ROUND(AVG(op.reordered),3)  AS reorder_rate
-    FROM order_products op
-    JOIN products p  ON op.product_id  = p.product_id
-    JOIN departments d ON p.department_id = d.department_id
-    GROUP BY d.department
+    SELECT department_name       AS department,
+           SUM(total_order_items) AS total_purchases,
+           ROUND(
+               SUM(total_order_items * reorder_rate)
+               / NULLIF(SUM(total_order_items), 0),
+               3
+           )                      AS reorder_rate
+    FROM analytics_kpis.mart_reorder_behavior
+    GROUP BY department_name
     ORDER BY total_purchases DESC
     LIMIT 15
 """)
 
 top_products = q("""
-    SELECT p.product_name,
-           COUNT(op.order_id)         AS purchase_count,
-           ROUND(AVG(op.reordered),3) AS reorder_rate
-    FROM order_products op
-    JOIN products p ON op.product_id = p.product_id
-    GROUP BY p.product_name
-    ORDER BY purchase_count DESC
+    SELECT product_name,
+           total_order_items AS purchase_count,
+           ROUND(reorder_rate, 3) AS reorder_rate
+    FROM analytics_kpis.mart_product_performance
+    ORDER BY total_order_items DESC
     LIMIT 20
 """)
 
 orders_by_hour = q("""
-    SELECT order_hour_of_day AS hour,
-           COUNT(*) AS order_count
-    FROM orders
+    SELECT order_hour_of_day    AS hour,
+           SUM(total_orders)    AS order_count
+    FROM analytics_analysis.mart_time_patterns
     GROUP BY order_hour_of_day
     ORDER BY hour
 """)
 
 orders_by_dow = q("""
-    SELECT order_dow AS day_of_week,
-           COUNT(*) AS order_count
-    FROM orders
-    GROUP BY order_dow
+    SELECT order_dow         AS day_of_week,
+           order_day_of_week AS day_name,
+           SUM(total_orders) AS order_count
+    FROM analytics_analysis.mart_time_patterns
+    GROUP BY order_dow, order_day_of_week
     ORDER BY day_of_week
 """)
-orders_by_dow['day_name'] = orders_by_dow['day_of_week'].map({
-    0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',
-    4:'Thursday',5:'Friday',6:'Saturday'
-})
 
-basket = pd.read_csv("data/processed/market_basket_rules.csv")
-basket['antecedents'] = basket['antecedents'].astype(str).str.strip("frozenset({})'")
-basket['consequents'] = basket['consequents'].astype(str).str.strip("frozenset({})'")
-basket = basket.head(15)
+basket = q("""
+    SELECT product_a_name AS antecedents,
+           product_b_name AS consequents,
+           support,
+           confidence_a_to_b AS confidence,
+           lift
+    FROM analytics_analysis.mart_basket_affinity
+    ORDER BY lift DESC
+    LIMIT 15
+""")
 
-total_orders   = q("SELECT COUNT(DISTINCT order_id) AS n FROM orders")['n'][0]
-total_customers= q("SELECT COUNT(DISTINCT user_id) AS n FROM orders")['n'][0]
-total_products = q("SELECT COUNT(DISTINCT product_id) AS n FROM products")['n'][0]
-reorder_rate   = q("SELECT ROUND(AVG(reordered)*100,1) AS r FROM order_products")['r'][0]
+_kpis = q("""
+    SELECT total_orders,
+           total_customers,
+           total_products,
+           reorder_rate
+    FROM analytics_kpis.mart_executive_kpis
+""")
+total_orders    = int(_kpis['total_orders'][0])
+total_customers = int(_kpis['total_customers'][0])
+total_products  = int(_kpis['total_products'][0])
+reorder_rate    = round(float(_kpis['reorder_rate'][0]) * 100, 1)
 
 # ── COLORS ────────────────────────────────────────────────────
 BLUE   = '#1155CC'
@@ -323,12 +121,15 @@ MUTED  = '#6b7280'
 LIGHT  = '#f8fafc'
 GRID   = '#e5e7eb'
 
+# Segment names come from mart_customer_segments.behavioral_segment. They are the four
+# behavioural segments the model actually produces - not RFM labels. The dataset has no
+# timestamps and no prices, so true Recency/Monetary scoring is not derivable and the
+# segmentation is behavioural by design (docs/decisions.md, decision 2).
 SEG_COLORS = {
-    'Champions':         '#1155CC',
-    'Loyal Customers':   '#2563eb',
-    'New Customers':     '#10b981',
-    'At Risk':           '#ef4444',
-    'Hibernating / Lost':'#9ca3af',
+    'High Engagement':     '#1155CC',
+    'Loyal Routine':       '#2563eb',
+    'Moderate Engagement': '#10b981',
+    'At Risk':             '#ef4444',
 }
 
 # ── CHARTS ────────────────────────────────────────────────────
@@ -470,10 +271,10 @@ TABS = dbc.Tabs([
     dbc.Tab(label='👥 Customer Analytics', children=[
         html.Br(),
         dbc.Row([
-            kpi('Champions',        f"{rfm[rfm['customer_segment']=='Champions']['customer_count'].sum():,}", BLUE),
-            kpi('Loyal Customers',  f"{rfm[rfm['customer_segment']=='Loyal Customers']['customer_count'].sum():,}", '#2563eb'),
-            kpi('At Risk',          f"{rfm[rfm['customer_segment']=='At Risk']['customer_count'].sum():,}", '#ef4444'),
-            kpi('Hibernating/Lost', f"{rfm[rfm['customer_segment']=='Hibernating / Lost']['customer_count'].sum():,}", MUTED),
+            kpi('High Engagement',     f"{rfm[rfm['customer_segment']=='High Engagement']['customer_count'].sum():,}", BLUE),
+            kpi('Loyal Routine',       f"{rfm[rfm['customer_segment']=='Loyal Routine']['customer_count'].sum():,}", '#2563eb'),
+            kpi('Moderate Engagement', f"{rfm[rfm['customer_segment']=='Moderate Engagement']['customer_count'].sum():,}", '#10b981'),
+            kpi('At Risk',             f"{rfm[rfm['customer_segment']=='At Risk']['customer_count'].sum():,}", '#ef4444'),
         ], className='g-3 mb-4'),
         dbc.Row([
             dbc.Col(dbc.Card(dbc.CardBody(
@@ -496,7 +297,7 @@ TABS = dbc.Tabs([
                     style_header={'backgroundColor':DARK,'color':'white',
                                   'fontWeight':'600','fontSize':'11px'},
                     style_data_conditional=[
-                        {'if':{'filter_query':'{customer_segment} = "Champions"'},
+                        {'if':{'filter_query':'{customer_segment} = "High Engagement"'},
                          'backgroundColor':'#dbeafe','color':BLUE,'fontWeight':'600'},
                         {'if':{'filter_query':'{customer_segment} = "At Risk"'},
                          'backgroundColor':'#fee2e2','color':'#ef4444'},
@@ -793,19 +594,19 @@ def _export_category_performance(output_path):
     fig.write_image(output_path, width=PORTFOLIO_WIDTH, height=PORTFOLIO_HEIGHT, scale=2)
 
 def _export_customer_segments(output_path):
+    # Ordered least- to most-engaged, so the exported bar chart reads bottom-to-top as an
+    # engagement ladder. Names match mart_customer_segments.behavioral_segment exactly.
     segment_order = [
-        "Hibernating / Lost",
         "At Risk",
-        "Loyal Customers",
-        "New Customers",
-        "Champions",
+        "Moderate Engagement",
+        "Loyal Routine",
+        "High Engagement",
     ]
     segment_colors = {
-        "Champions": PORTFOLIO_BLUE,
-        "Loyal Customers": PORTFOLIO_BLUE,
+        "High Engagement": PORTFOLIO_BLUE,
+        "Loyal Routine": PORTFOLIO_BLUE,
+        "Moderate Engagement": PORTFOLIO_TEAL,
         "At Risk": PORTFOLIO_ROSE,
-        "Hibernating / Lost": PORTFOLIO_GRAY,
-        "New Customers": PORTFOLIO_TEAL,
     }
     source = rfm[["customer_segment", "customer_count"]].copy()
     source["customer_count"] = source["customer_count"].astype(int)
