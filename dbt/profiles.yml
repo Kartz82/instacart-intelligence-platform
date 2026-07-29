@@ -1,0 +1,27 @@
+instacart_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5434') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'postgres') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'instacart_db') }}"
+      schema: analytics
+      threads: 4
+      keepalives_idle: 0
+
+    # Every value here comes from the environment; no credentials are stored in this
+    # file. See profiles.yml.example for the full annotated version.
+    bigquery:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      project: "{{ env_var('GCP_PROJECT', '') }}"
+      dataset: "{{ env_var('BQ_DATASET', 'instacart_analytics') }}"
+      location: "{{ env_var('BQ_LOCATION', 'US') }}"
+      threads: 8
+      job_execution_timeout_seconds: 3600
+      job_retries: 1
+      priority: interactive

@@ -11,6 +11,8 @@ Power BI should connect to dbt marts, not raw tables. The marts below are the BI
 | Customer Segments | `analytics_kpis.mart_customer_segments` | One row per `user_id` | Behavioral engagement segmentation |
 | Cohort Retention | `analytics_analysis.mart_cohort_retention` | One row per order-sequence index | Retention across observed order milestones |
 | Basket Affinity | `analytics_analysis.mart_basket_affinity` | One row per product pair | Product affinity and merchandising analysis |
+| Time Patterns | `analytics_analysis.mart_time_patterns` | One row per day-of-week × hour (168) | Temporal demand heatmap |
+| Reorder Behavior | `analytics_kpis.mart_reorder_behavior` | One row per department × aisle (134) | Category repeat-purchase diagnostics |
 
 ## `analytics_kpis.mart_executive_kpis`
 
@@ -86,8 +88,10 @@ Segment labels:
 - `High Engagement`
 - `Loyal Routine`
 - `At Risk`
-- `Early Lifecycle`
 - `Moderate Engagement`
+
+There is no onboarding segment: every customer in this extract has 4-100 observed orders,
+so new customers are absent from the sample by construction (see Decision 8).
 
 Business usage:
 - Show distribution of customer engagement groups.
@@ -152,6 +156,67 @@ Limitations:
 - The mart filters to common products and co-occurring pairs for local performance.
 - High lift does not imply causation.
 
+## `analytics_analysis.mart_time_patterns`
+
+Grain: one row per day-of-week × hour-of-day. Always exactly 168 rows.
+
+Built from `dim_time` by left join, so a slot with zero orders is still present with
+`total_orders = 0`. Order counts come from `dim_orders` and item counts from
+`fact_order_items`, aggregated separately: joining the two grains directly would multiply
+order counts by basket size. A singular test asserts `sum(total_orders)` equals the
+`dim_orders` row count.
+
+Key columns:
+
+| Column | Definition | Business Usage |
+|---|---|---|
+| `time_key` | Surrogate key over `order_dow` + `order_hour_of_day` | Relationship to `dim_time` |
+| `order_dow` | Day of week, 0 = Sunday | Sort-by column for `order_day_of_week` |
+| `order_day_of_week` | Weekday label | Heatmap rows |
+| `order_hour_of_day` | Hour, 0-23 | Heatmap columns |
+| `daypart` | Overnight / Morning / Midday / Afternoon / Evening | Coarse time grouping |
+| `is_weekend` | True for Saturday and Sunday | Weekend vs weekday comparison |
+| `total_orders` | Orders placed in this slot | Heatmap value |
+| `distinct_customers` | Distinct customers ordering in this slot | Reach by time |
+| `average_basket_size` | Mean basket size for orders in this slot | Basket depth by time |
+| `total_order_items` | Line items in this slot | Denominator for the slot reorder rate |
+| `reordered_items` | Reordered line items in this slot | Numerator for the slot reorder rate |
+| `reorder_rate` | `reordered_items / total_order_items` | Intent by time of day |
+| `share_of_total_orders` | Slot orders / all platform orders | Slot weighting |
+
+Limitations:
+- The dataset has no absolute dates. This is a day-of-week × hour profile aggregated over
+  the whole period, **not** a time series. It cannot show trend, seasonality, or growth.
+
+## `analytics_kpis.mart_reorder_behavior`
+
+Grain: one row per department × aisle. 134 rows.
+
+Key columns:
+
+| Column | Definition | Business Usage |
+|---|---|---|
+| `department_id`, `department_name` | Parent department | Grouping and drill-up |
+| `aisle_id`, `aisle_name` | Aisle within the department | Row identity |
+| `total_order_items` | Line items in this aisle | Volume weighting, data bars |
+| `reordered_items` | Reordered line items in this aisle | Rate numerator |
+| `distinct_orders`, `distinct_customers`, `distinct_products` | Reach measures | Context for a rate |
+| `reorder_rate` | `reordered_items / total_order_items` | Aisle repeat-purchase rate |
+| `department_reorder_rate` | Parent department rate, repeated on each row | Benchmark |
+| `platform_reorder_rate` | Platform-wide rate, constant on every row | Benchmark |
+| `reorder_rate_vs_department` | Aisle rate − department rate | **Primary diagnostic.** Negative = under-performs its own department |
+| `reorder_rate_vs_platform` | Aisle rate − platform rate | Secondary diagnostic |
+| `below_volume_floor` | True when `total_order_items < 1000` | Greys out unstable rates |
+| `share_of_order_items` | Aisle items / platform items | Category weighting |
+
+Notes:
+- Low-volume aisles are **flagged, not filtered**, so department sums still reconcile to
+  the platform total. On the current dataset all 134 aisles clear the floor and 0 rows are
+  flagged.
+- Aggregate this mart with `SUM(reordered_items) / SUM(total_order_items)`, never with an
+  average of `reorder_rate` — averaging rates weights a 9,620-item aisle equally with a
+  3,792,661-item aisle.
+
 ## Upstream Core Marts
 
 These are used by dbt to build the BI-facing marts and may be useful for validation, but Power BI should prioritize the BI-facing marts above.
@@ -161,7 +226,8 @@ These are used by dbt to build the BI-facing marts and may be useful for validat
 | `analytics_core.dim_customers` | One row per `user_id` | Customer lifecycle attributes |
 | `analytics_core.dim_products` | One row per `product_id` | Product catalog with aisle and department |
 | `analytics_core.dim_orders` | One row per `order_id` | Order timing and basket-size attributes |
-| `analytics_core.fact_order_items` | One row per `order_id` + `product_id` | Order-item fact table |
+| `analytics_core.dim_time` | One row per day-of-week × hour (168) | Conformed time dimension; import into Power BI for the heatmap axes |
+| `analytics_core.fact_order_items` | One row per `order_id` + `product_id` | Order-item fact table, 33,819,106 rows. **Do not import into Power BI** — every mart above is already pre-aggregated |
 
 ## General Limitations
 
