@@ -21,3 +21,9 @@ __pycache__/
 /backups/
 dbt/target/
 dbt/logs/
+dbt/dbt_packages/
+
+# Credentials - never commit
+gcp-key.json
+*-sa-key.json
+service-account*.json
