@@ -13,8 +13,12 @@ name: dbt build (BigQuery)
 #   BQ_RAW_DATASET   dataset holding the raw loaded tables, e.g. instacart_raw
 
 on:
-  schedule:
-    - cron: "0 6 * * 1"
+  # schedule paused — every scheduled run has failed because the required
+  # GCP_SA_KEY / GCP_PROJECT / BQ_DATASET / BQ_RAW_DATASET repo secrets
+  # aren't configured (dbt parse fails with "Must specify schema"). Re-enable
+  # by uncommenting once BigQuery is set up per docs/decisions.md.
+  # schedule:
+  #   - cron: "0 6 * * 1"
   workflow_dispatch:
   pull_request:
     paths:
