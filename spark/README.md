@@ -137,8 +137,8 @@ Filled in only from `instacart_ops.pipeline_runs` and the reconciliation noteboo
 
 - **Databricks Free Edition** runs serverless compute with daily usage limits; a full
   load of 33.8M line items plus the affinity pair generation is the heaviest stage.
-- **Not executed in this repo's development environment:** Delta `MERGE`, `OPTIMIZE`,
-  `RESTORE` and the Databricks notebooks. They run in CI (`test_delta_incremental.py`)
-  and on Databricks; nothing claims they work until those runs pass.
+- Delta `MERGE`, `OPTIMIZE` and time travel are verified in CI (`test_delta_incremental.py`,
+  synthetic sample). `RESTORE`, the Databricks notebooks and the Job have **not** been run
+  on Databricks yet; nothing claims they work on the full dataset until they do.
 - Waves are a **simulation** of arrival over a static extract (order-number windows),
   not real event-time data. The dataset has no timestamps.
