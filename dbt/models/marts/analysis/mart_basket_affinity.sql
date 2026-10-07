@@ -1,3 +1,9 @@
+-- Eligibility thresholds are dbt vars so tests can shrink them to fit a tiny sample.
+-- The defaults are the production values documented in docs/decisions.md section 3;
+-- with no --vars the compiled SQL is identical to the previous hard-coded version.
+{% set min_product_orders = var('min_product_orders', 1000) %}
+{% set min_pair_orders = var('min_pair_orders', 100) %}
+
 with product_order_counts as (
     select
         product_id,
@@ -11,7 +17,7 @@ eligible_products as (
         product_id,
         orders_with_product
     from product_order_counts
-    where orders_with_product >= 1000
+    where orders_with_product >= {{ min_product_orders }}
 ),
 
 eligible_order_items as (
@@ -36,7 +42,7 @@ product_pairs as (
     group by
         product_a.product_id,
         product_b.product_id
-    having count(distinct product_a.order_id) >= 100
+    having count(distinct product_a.order_id) >= {{ min_pair_orders }}
 ),
 
 total_orders as (

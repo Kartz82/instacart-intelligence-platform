@@ -57,6 +57,43 @@ capabilities in this repo are written and syntax-checked but have never been exe
 
 ---
 
+## Lakehouse + Airflow upgrade — status per bullet
+
+### Usable now (verified by tests in this repo)
+
+> Re-implemented a dbt warehouse as a **bronze → silver → gold Delta Lake medallion in
+> PySpark**, proving equivalence by building the original dbt models on a second engine
+> and matching **all 5 gold marts and 3 silver tables row for row**; the cross-engine
+> test also exposed and fixed a portability bug in the dbt project's surrogate keys.
+
+> Rewrote a quadratic SQL self-join for market-basket pair counting as **per-order array
+> pair generation in PySpark** (one shuffle instead of a join), with results identical to
+> the SQL implementation.
+
+> Built **Airflow 3** orchestration where a failing **dbt test blocks downstream
+> publication**, with retries, exponential backoff, webhook alerting, a deferrable
+> Databricks operator, and a backfillable incremental DAG; covered by DAG integrity tests.
+
+Sources: `spark/tests/test_equivalence.py`, `docs/decisions.md` §9, `airflow/tests/dags/`.
+State these as *built and tested*, not *deployed*, until the steps below run.
+
+### Usable after Databricks runs (`TASKS.md` I5–I8, J3–J4)
+
+> Engineered **incremental, idempotent Delta `MERGE` loads** on Databricks over a
+> 33.8M-row fact table, cutting per-load runtime from TODO: verify (full-mode `run_id`
+> total in `instacart_ops.pipeline_runs`) to TODO: verify (incremental `run_id` total).
+
+> Scheduled a 6-stage **Databricks Job** with data-quality gates, reconciled **TODO:
+> verify (n / 5) marts** to the PostgreSQL dbt build on the full dataset, and compacted
+> the fact table from TODO: verify (files_before) to TODO: verify (files_after) files with
+> `OPTIMIZE … ZORDER BY`.
+
+> Orchestrated dbt and Databricks with **Apache Airflow**, backfilling TODO: verify (10)
+> incremental loads in order with `depends_on_past` and recovering a bad write with
+> **Delta time travel / `RESTORE`**.
+
+---
+
 ## Not yet true — do not use until the corresponding step runs
 
 These describe work that exists in the repository but has **never been executed**. Writing
@@ -68,6 +105,10 @@ them on a resume today would be a fabrication.
 | "Automated scheduled builds in CI" | Repo secrets + a first run | `.github/workflows/dbt_build.yml` completes green (`TASKS.md` D4) |
 | "Published dbt lineage documentation" | GitHub Pages enabled | `dbt_docs.yml` deploys successfully (`TASKS.md` D4) |
 | "Built a 5-page Power BI dashboard" | Power BI Desktop | The `.pbix` is assembled from `bi/powerbi_dashboard_plan.md` (`TASKS.md` E4) |
+| "Deployed a Delta lakehouse on Databricks" | A green Job run | `TASKS.md` I6 |
+| Any lakehouse runtime, speed-up, or file-count figure | The run log | `instacart_ops.pipeline_runs` has the run (`TASKS.md` I8) |
+| "Reconciled to the dbt warehouse on the full dataset" | The reconciliation notebook | 5 / 5 PASS (`TASKS.md` I7) |
+| "Orchestrated with Airflow" (as running, not built) | `astro dev start` + a green run | `TASKS.md` J3–J4 |
 | Any revenue, margin, AOV, or CLV figure | Nothing — **permanently unavailable** | Never. The dataset contains no prices. |
 
 Until BigQuery has actually run, the honest phrasing is *"written to target both PostgreSQL

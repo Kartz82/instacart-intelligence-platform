@@ -5,14 +5,19 @@
 -- day-of-week x hour-of-day, which is exactly 7 * 24 = 168 rows. This dimension is
 -- generated rather than derived from the fact table so that hours with zero orders
 -- still appear in the heatmap.
+--
+-- The explicit integer casts matter: dbt_utils.generate_series returns an integer on
+-- PostgreSQL but a DOUBLE on DuckDB, and the surrogate key hashes the text form of the
+-- value ('0-0' vs '0.0-0.0'). Without the casts the same model produces different
+-- time_key values on different engines. On PostgreSQL the cast is a no-op.
 
 with days as (
-    select generated_number - 1 as order_dow
+    select cast(generated_number - 1 as {{ dbt.type_int() }}) as order_dow
     from ({{ dbt_utils.generate_series(upper_bound=7) }}) as generated_days
 ),
 
 hours as (
-    select generated_number - 1 as order_hour_of_day
+    select cast(generated_number - 1 as {{ dbt.type_int() }}) as order_hour_of_day
     from ({{ dbt_utils.generate_series(upper_bound=24) }}) as generated_hours
 ),
 

@@ -211,3 +211,79 @@ and simply never fires — so the invariant is enforced rather than trusted.
 **Verified.** Segment counts are unchanged by this fix, because the removed branch never
 matched anything: High Engagement **28,883**, Loyal Routine **62,818**, At Risk **44,873**,
 Moderate Engagement **69,635**. Total **206,209**, reconciling to `dim_customers`.
+
+---
+
+## 9. `dim_time` casts its generated numbers to integer, because the surrogate key depended on the engine
+
+**Context.** Building the dbt project on DuckDB (as the reference for the PySpark port)
+produced different `time_key` values for all 168 rows than the PostgreSQL build.
+
+**Cause.** `dbt_utils.generate_series` returns an integer on PostgreSQL but a `DOUBLE` on
+DuckDB. `generate_surrogate_key` hashes the *text* of each value, so the same slot hashed
+`'0-0'` on one engine and `'0.0-0.0'` on the other. The models were written to be
+cross-database (Decision 1), and this one silently was not.
+
+**Chosen.** Cast both generated columns with `{{ dbt.type_int() }}` before they are keyed.
+On PostgreSQL the cast is a no-op, so every published figure is unchanged; on any engine
+whose series generator returns a float, the keys now agree.
+
+**Tradeoff.** None worth naming. The lesson is the method: a second engine is a test, and
+it found a portability bug that `EXPLAIN` and `dbt parse` could not.
+
+---
+
+## 10. Spark vs dbt reconciliation allows one unit in the last place on `lift`, and nowhere else
+
+**Context.** On the synthetic test sample, 2 of 4,200 affinity pairs differed in the 6th
+decimal of `lift` between the dbt build and the Spark port.
+
+**Cause.** Both were exact ties. For example 5 × 5,061 / (120 × 112) = 1.8828125. The SQL
+computes lift as two nested decimal divisions, so the value that reaches `round(…, 6)`
+depends on the engine's intermediate decimal scale, and a tie can land either way. The
+Spark port computes `both × total / (a × b)` as one exact division.
+
+**Chosen.** `reconcile.py` allows a tolerance of exactly one unit in the 6th decimal on
+`lift` only. Every other column, in every mart, must match exactly.
+
+**Tradeoff.** A genuine bug that moved lift by less than 0.000001 would pass. That is
+below the precision the mart publishes, so it would be invisible to any consumer anyway.
+
+---
+
+## 11. Incremental loads MERGE into silver but rebuild gold
+
+**Context.** The lakehouse layer loads data in waves (Decision 12) with Delta `MERGE`.
+
+**Options.**
+
+| Option | Effect |
+| --- | --- |
+| Full rebuild every run | Simple; re-processes 33.8M line items for every arrival |
+| Incremental everywhere, gold included | Least compute, but gold marts are global: one new order can change every customer's `ntile()` score and every pair's support denominator |
+| Incremental bronze + silver, rebuild gold | MERGE where the grain is local (orders, lines, the touched customers); full recompute where the metric is global |
+
+**Chosen.** The third. `dim_orders` and `fact_order_items` MERGE on their natural keys;
+`dim_customers` is recomputed only for customers present in the wave, from their full
+history; gold is rebuilt from silver.
+
+**Tradeoff.** Gold costs a full scan of silver per run. It is the cheaper mistake: the
+gold marts are small, and an incremental gold layer would be more code to be subtly wrong.
+
+**Verified.** A test loads three waves and requires the result to equal a full load,
+silver and gold, row for row; re-running a wave must change nothing.
+
+---
+
+## 12. "New data" is simulated as order-number waves, because the extract is static
+
+**Context.** Incremental loading needs arrivals. The Kaggle extract is a single snapshot
+with no timestamps (Decision 2).
+
+**Chosen.** Wave *N* is every order whose `order_number` falls in `[10N + 1, 10N + 10]`,
+with its line items. That approximates "the next stretch of every customer's history".
+The Airflow backfill maps one calendar day to one wave.
+
+**Tradeoff.** It is a simulation, and is labelled as one. Real event-time arrival, late
+data and out-of-order files are not modelled. On a live source, Auto Loader over a
+landing folder would replace it (see `docs/azure_architecture.md`).

@@ -1,0 +1,14 @@
+line-length = 110
+extend-exclude = ["airflow/include/dbt", "dbt", "dashboard", "src", "ingestion"]
+
+[lint]
+select = ["E", "F", "W", "B", "I"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# Databricks notebooks: `spark`, `dbutils`, `display` are injected globals, and the
+# package import must follow the sys.path tweak.
+"spark/notebooks/*.py" = ["F821", "E402"]
+"spark/jobs/*.py" = ["E402"]
+"spark/tests/*.py" = ["E402"]
+"airflow/tests/*/*.py" = ["E402"]

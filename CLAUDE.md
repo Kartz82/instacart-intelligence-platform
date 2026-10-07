@@ -119,3 +119,5 @@ The agent does **not** build the `.pbix` — it writes the spec + DAX; the human
 3. Run dbt from the `dbt/` directory using the repo venv: `../venv/bin/dbt <cmd> --profiles-dir .`
 4. Reuse conventions from `~/Projects/customer_intelligence_warehouse` so the two flagships feel consistent.
 5. Never run anything that needs credentials the environment doesn't have — surface it as a human step instead.
+6. **Lakehouse layer (`spark/`).** PySpark ports must keep matching dbt: run `pytest spark/tests` with `DBT_ORACLE_PROJECT_DIR=dbt` after changing either side. Synthetic test data never feeds a published number. Runtime claims come only from `instacart_ops.pipeline_runs`.
+7. **Airflow (`airflow/`).** Astro CLI project; run `airflow/scripts/sync_dbt.sh` before `astro dev start`. Databricks credentials live only in the human's `airflow/.env`.

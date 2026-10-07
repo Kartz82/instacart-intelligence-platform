@@ -1,0 +1,10 @@
+# Local development and tests for the PySpark / Delta layer.
+# Databricks provides pyspark and delta itself; nothing here is installed on the cluster.
+pyspark>=4.0,<4.1
+delta-spark>=4.0,<4.1
+pandas>=2.2
+pyarrow>=15
+pytest>=8
+# dbt-on-DuckDB builds the reference marts the equivalence tests compare against
+duckdb>=1.1
+dbt-duckdb>=1.9

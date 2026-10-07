@@ -1,0 +1,7 @@
+.env
+.astro
+logs
+**/__pycache__
+include/dbt/target
+include/dbt/logs
+include/dbt/dbt_packages

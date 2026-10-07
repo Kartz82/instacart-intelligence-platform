@@ -2,7 +2,7 @@
 
 Legend: `[AGENT]` = Claude Code can complete and verify. `[HUMAN]` = needs credentials, GUI tooling, or Kartz's accounts.
 
-Last loop update: 2026-07-25.
+Last loop update: 2026-10-07 (lakehouse + Airflow upgrade, branch `feature/lakehouse-spark-airflow`).
 
 ---
 
@@ -69,3 +69,35 @@ Last loop update: 2026-07-25.
 ## H. Findings raised during this loop
 
 - [x] **H1 [RESOLVED]** The `Early Lifecycle` segment in `mart_customer_segments` matched **0 customers**. The cause was **not** branch ordering, as first suspected: the branch condition `total_orders <= 3` is unsatisfiable against this dataset, because every customer in the extract has between **4 and 100** orders (verified against the warehouse — 0 customers with <= 3 orders, 23,986 with exactly 4). Reordering the `CASE` was tested and changed nothing. Resolved by removing the dead branch rather than lowering the threshold, which would have manufactured a lifecycle stage the curated sample does not contain. Added `assert_customer_segments_cover_all_customers.sql` so an empty or unexpected segment fails the build. **Segment counts are unchanged** (High Engagement 28,883 / Loyal Routine 62,818 / At Risk 44,873 / Moderate Engagement 69,635), so nothing published on `kartz82.github.io` needed updating. Documented as Decision 8 in `docs/decisions.md`.
+
+---
+
+## I. Lakehouse layer — PySpark + Delta on Databricks (`spark/`)
+
+- [x] **I1 [AGENT]** Port 5 marts + their silver dependencies to PySpark (`gold.py`, `silver.py`). *done = `test_equivalence.py`: all 5 gold marts and 3 silver tables match the dbt models built on DuckDB over a synthetic sample, row for row. Basket affinity rewritten as array pair generation instead of a self-join.*
+- [x] **I2 [AGENT]** Bronze loader with explicit schemas, FAILFAST parsing, lineage columns. *done = `bronze.py`; quoted product names with embedded commas parse correctly in the sample.*
+- [x] **I3 [AGENT]** Incremental MERGE design + tests. *done = `test_incremental.py`: 3 waves converge to the full-load state, silver and gold; a re-run wave is a no-op.*
+- [x] **I4 [AGENT]** Quality gates, run log, OPTIMIZE/time-travel helpers, 6-stage pipeline, Job JSON, 3 notebooks. *done = `test_pipeline_local.py` runs all 6 stages end to end (Parquet); `test_invariants.py` proves the gate catches an injected orphan row.*
+- [ ] **I5 [AGENT/CI]** `test_delta_incremental.py` green in GitHub Actions. *done = `spark_tests.yml` passes with `TEST_WITH_DELTA=1`. **Real Delta MERGE / OPTIMIZE / time travel have not been executed yet** — the dev environment could not download the Delta jars.*
+- [ ] **I6 [HUMAN+AGENT]** Databricks Free Edition: Git folder, `setup`, upload CSVs to the volume, create the Job from `spark/databricks/instacart_lakehouse_job.json`, run `mode=full`. *done = Job run green; `instacart_ops.pipeline_runs` has a full-mode run.*
+- [ ] **I7 [HUMAN]** Export dbt marts (`spark/scripts/export_dbt_marts.py`), upload to the volume, run `reconcile_with_dbt`. *done = 5 / 5 marts reconcile on the full dataset; paste the table into `spark/README.md`.*
+- [ ] **I8 [HUMAN+AGENT]** Run incremental waves + `delta_features_demo`. *done = runtimes, MERGE counts, OPTIMIZE files before/after copied from the run log into `spark/README.md` (replacing every TODO there).*
+
+## J. Orchestration — Airflow 3 on Astro (`airflow/`)
+
+- [x] **J1 [AGENT]** `instacart_dbt_build`: `dbt_deps → dbt_run → dbt_test → Databricks`, test gate, retries with backoff, failure alerts. *done = DAG integrity tests pass on Airflow 3.3.2 (6 / 6), including the gate order and `dbt_test.retries == 0`; Databricks operator templates render (`job_id`, `wave`).*
+- [x] **J2 [AGENT]** `instacart_lakehouse_incremental`: one wave per day, `depends_on_past`, backfill-ready. *done = wave mapping tested (day 1 → wave 0, day 10 → wave 9, out-of-range rejected).*
+- [ ] **J3 [HUMAN]** `astro dev start`, trigger `instacart_dbt_build`. *done = green run (Databricks step skipped is expected until J4).*
+- [ ] **J4 [HUMAN]** Databricks connection + `databricks_job_id` in `airflow/.env`; backfill 10 waves. *done = 10 green runs; screenshot of the grid.*
+- [ ] **J5 [HUMAN]** Astronomer free workshop / Airflow fundamentals cert. *Course item; not code.*
+
+## K. Azure design (concept only)
+
+- [x] **K1 [AGENT]** `docs/azure_architecture.md`: ADLS Gen2 + ADF + Azure Databricks + Unity Catalog + Key Vault mapping, orchestration tradeoff, code deltas. *done = file exists and is labelled design-only.*
+- [ ] **K2 [HUMAN]** Microsoft Applied Skills badge (if available). *Course item.*
+
+## L. Findings raised during this loop
+
+- [x] **L1 [RESOLVED]** `dim_time.time_key` was engine-dependent (`generate_series` returns DOUBLE on DuckDB). Fixed with integer casts; no-op on Postgres. Decision 9.
+- [x] **L2 [RESOLVED]** `lift` ties at the 6th decimal round differently by engine. Reconciliation tolerance of one unit in the last place on `lift` only. Decision 10.
+- [ ] **L3 [HUMAN]** Re-run the Postgres `dbt build` after the `dim_time` cast and `mart_basket_affinity` var changes. *done = `PASS=256` (or higher) again and marts identical to before. Both changes should be result-neutral on Postgres; this confirms it.*

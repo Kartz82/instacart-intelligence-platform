@@ -1,10 +1,10 @@
 # Instacart Customer & Operations Intelligence Platform
 
-![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white) ![PostgreSQL 15](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white) ![dbt Core](https://img.shields.io/badge/dbt-Core-FF694B?logo=dbt&logoColor=white) ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white) ![SQL](https://img.shields.io/badge/SQL-PostgreSQL-336791) ![Power BI](https://img.shields.io/badge/Power%20BI-Desktop-F2C811?logo=powerbi&logoColor=black) ![Plotly Dash](https://img.shields.io/badge/Plotly-Dash-3F4F75?logo=plotly&logoColor=white) ![Analytics Engineering](https://img.shields.io/badge/Analytics-Engineering-2E7D32)
+![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white) ![PostgreSQL 15](https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white) ![dbt Core](https://img.shields.io/badge/dbt-Core-FF694B?logo=dbt&logoColor=white) ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white) ![SQL](https://img.shields.io/badge/SQL-PostgreSQL-336791) ![Power BI](https://img.shields.io/badge/Power%20BI-Desktop-F2C811?logo=powerbi&logoColor=black) ![Plotly Dash](https://img.shields.io/badge/Plotly-Dash-3F4F75?logo=plotly&logoColor=white) ![Analytics Engineering](https://img.shields.io/badge/Analytics-Engineering-2E7D32) ![PySpark](https://img.shields.io/badge/PySpark-4.0-E25A1C?logo=apachespark&logoColor=white) ![Delta Lake](https://img.shields.io/badge/Delta%20Lake-MERGE%20%C2%B7%20time%20travel-00ADD4) ![Databricks](https://img.shields.io/badge/Databricks-Jobs-FF3621?logo=databricks&logoColor=white) ![Apache Airflow](https://img.shields.io/badge/Airflow-3.3-017CEE?logo=apacheairflow&logoColor=white)
 
-Analytics Engineering · PostgreSQL Warehouse · dbt Core · SQL Analysis · Power BI Planning
+Analytics Engineering · Data Engineering · PostgreSQL Warehouse · dbt Core · PySpark + Delta Lakehouse on Databricks · Airflow Orchestration · Power BI Planning
 
-An end-to-end analytics engineering and BI project built on the public Instacart order dataset to analyze customer behavior, product performance, cohort retention, and basket affinity. This project engineers a local Dockerized PostgreSQL warehouse, models reusable analytics layers with dbt Core, adds recruiter-readable SQL analysis, and defines a Power BI dashboard plan connected to validated dbt marts.
+An end-to-end analytics engineering and BI project built on the public Instacart order dataset to analyze customer behavior, product performance, cohort retention, and basket affinity. This project engineers a local Dockerized PostgreSQL warehouse, models reusable analytics layers with dbt Core, re-implements the pipeline as a **bronze → silver → gold Delta Lake medallion in PySpark on Databricks** with incremental `MERGE` loads, orchestrates both with **Apache Airflow**, and defines a Power BI dashboard plan connected to validated marts.
 
 ---
 
@@ -72,6 +72,12 @@ flowchart TD
     I --> J
     K[GitHub Actions] -->|scheduled dbt build| C
     K -->|dbt docs generate --static| L[dbt lineage on GitHub Pages]
+    A -->|Unity Catalog volume| M[(Delta bronze)]
+    M -->|PySpark · MERGE per wave| N[(Delta silver<br/>dims + 33.8M-row fact)]
+    N -->|PySpark| O[(Delta gold<br/>5 marts)]
+    O -.reconciled row for row.-> F
+    P[Airflow DAGs<br/>Astro CLI] -->|dbt run → dbt test gate| C
+    P -->|DatabricksRunNow| M
 ```
 
 The same dbt project builds from either warehouse — see **Warehouse Targets** below.
@@ -212,12 +218,42 @@ A field-parameters page pairing a metric selector with a dimension selector.
 
 ---
 
+## Lakehouse Layer — PySpark + Delta Lake on Databricks
+
+**Question: can the warehouse logic move to a distributed engine without changing a single number, and load new data incrementally instead of rebuilding 33.8M rows?**
+
+`spark/` re-implements the pipeline as a Delta Lake medallion, run as a 6-task Databricks Job (`setup → bronze → silver → gold → quality → optimize`):
+
+- **Bronze** — explicit schemas, `FAILFAST` parsing, lineage columns (`_batch_id`, `_ingested_at`, `_source_file`).
+- **Silver** — PySpark ports of the staging, intermediate and core dbt models, including the 33.8M-row `fact_order_items`.
+- **Gold** — ports of 5 marts: executive KPIs, customer segments (`ntile` windows), cohort retention, the 168-slot time patterns, and basket affinity, which is **rewritten from a SQL self-join into per-order array pair generation** — one shuffle instead of a join.
+- **Incremental `MERGE`** into silver on natural keys, recomputing only the customers each wave touched; idempotent, so retries and backfills are safe.
+- **Delta features** — version history, `VERSION AS OF` time travel, `RESTORE` after a simulated bad write, `OPTIMIZE … ZORDER BY` with files measured before and after.
+- **Quality gates** that fail the Job, and a **run log** table that records every stage's runtime.
+
+**Proven, not assumed:** the real dbt models are built on DuckDB over a synthetic sample and the Spark output must match them **row for row** — all 5 gold marts and 3 silver tables. A second test requires wave-by-wave loading to converge to exactly the full-load result. The equivalence test also caught a cross-database bug in the dbt project itself (`docs/decisions.md` §9). Full-dataset runtimes and the Databricks-vs-Postgres reconciliation are recorded in `spark/README.md` once run. Details: **[`spark/README.md`](spark/README.md)**.
+
+## Orchestration with Apache Airflow
+
+`airflow/` is an Astro CLI project (Airflow 3.3) with two DAGs:
+
+| DAG | Flow |
+| :--- | :--- |
+| `instacart_dbt_build` | `dbt run → dbt test → Databricks full refresh` — **a failing dbt test blocks the lakehouse refresh** |
+| `instacart_lakehouse_incremental` | one Delta `MERGE` wave per day, `depends_on_past`, built to be **backfilled** |
+
+Retries with exponential backoff, failure alerts to a webhook, a deferrable Databricks operator, and DAG integrity tests in CI. Details: **[`airflow/README.md`](airflow/README.md)**. Azure equivalent (ADLS Gen2 + ADF + Azure Databricks), design only: [`docs/azure_architecture.md`](docs/azure_architecture.md).
+
+---
+
 ## Tech Stack
 
 - Python · pandas
 - PostgreSQL 15 · Docker Compose · Dockerfile for a pinned dbt/Python runner
 - **Google BigQuery** — second warehouse target, loaded by `ingestion/load_bigquery.py` via `bq load`
-- dbt Core · dbt-postgres · dbt-bigquery · dbt_utils
+- dbt Core · dbt-postgres · dbt-bigquery · dbt_utils · dbt-duckdb (test oracle)
+- **PySpark 4 · Delta Lake · Databricks** (Jobs, Unity Catalog volumes, serverless)
+- **Apache Airflow 3** on the Astro CLI · Databricks provider
 - **GitHub Actions** — scheduled `dbt build`, PR validation, and dbt docs published to GitHub Pages
 - SQL with CTEs, window functions, tests, and analytical marts
 - Power BI Desktop design specification with DAX
@@ -288,7 +324,12 @@ instacart-intelligence-platform/
 ├── .github/
 │   └── workflows/
 │       ├── dbt_build.yml            # scheduled + PR dbt build against BigQuery
-│       └── dbt_docs.yml             # dbt docs generate --static -> GitHub Pages
+│       ├── dbt_docs.yml             # dbt docs generate --static -> GitHub Pages
+│       └── spark_tests.yml          # PySpark equivalence + Delta tests, Airflow DAG tests
+├── airflow/                         # Astro CLI project (Airflow 3.3)
+│   ├── dags/                        # instacart_dbt_build, instacart_lakehouse_incremental
+│   ├── include/alerts.py
+│   └── tests/dags/                  # DAG integrity tests
 ├── analysis/
 │   ├── basket_affinity.sql
 │   ├── cohort_retention.sql
@@ -322,6 +363,7 @@ instacart-intelligence-platform/
 ├── docs/
 │   ├── architecture.md
 │   ├── architecture_diagram.mmd
+│   ├── azure_architecture.md        # Azure mapping (design only)
 │   ├── decisions.md                 # decisions and tradeoffs, with the numbers behind them
 │   ├── erd.md                       # star-schema entity relationship diagram
 │   └── resume_bullets.md
@@ -333,6 +375,11 @@ instacart-intelligence-platform/
 │   ├── rfm_analysis.sql
 │   ├── retention_matrix.sql
 │   └── category_deepdive.sql
+├── spark/                           # PySpark + Delta lakehouse (bronze/silver/gold)
+│   ├── instacart_spark/             # bronze, silver, gold, incremental, delta_ops, quality, runlog
+│   ├── notebooks/                   # Databricks notebooks the Job runs
+│   ├── databricks/                  # Job definition
+│   └── tests/                       # equivalence vs dbt, incremental convergence
 ├── src/
 │   ├── database_loader.py           # CSV -> PostgreSQL raw schema
 │   ├── market_basket.py
@@ -492,6 +539,9 @@ Power BI screenshot placeholders are documented in `bi/powerbi_dashboard_plan.md
 - Product affinity analysis framed as SQL-based BI, not machine learning.
 - Power BI dashboard planning connected to dbt marts.
 - Architecture and data dictionary documentation suitable for a portfolio review.
+- The same pipeline as a Delta Lake medallion in PySpark, proven equal to dbt row for row.
+- Incremental, idempotent `MERGE` loads and Delta time travel, `RESTORE` and `OPTIMIZE`.
+- Airflow orchestration where a failing data test blocks downstream publication.
 
 ---
 
@@ -510,6 +560,10 @@ Power BI screenshot placeholders are documented in `bi/powerbi_dashboard_plan.md
 | **CI/CD & orchestration** | `.github/workflows/dbt_build.yml` (scheduled build + `--empty` PR validation), `.github/workflows/dbt_docs.yml` (docs to Pages) |
 | **Power BI / DAX** | `bi/powerbi_dashboard_plan.md` — 33 DAX measures, model relationships, conditional-formatting rule sets |
 | **Data quality** | Test suite plus explicit guards: reorder-rate range tests, a grain-uniqueness test on the 33.8M-row fact, and an order-count reconciliation test |
+| **PySpark** | `spark/instacart_spark/` — DataFrame ports of 12 models and 5 marts, window functions, higher-order array functions for pair generation, broadcast joins |
+| **Delta Lake / Databricks** | `incremental.py` (`MERGE INTO`), `delta_ops.py` (`OPTIMIZE ZORDER`, time travel, `RESTORE`), `databricks/instacart_lakehouse_job.json` (6-task Job) |
+| **Apache Airflow** | `airflow/dags/` — test-gated dbt DAG, backfillable incremental DAG, retries, alerting, deferrable operators; integrity tests |
+| **Testing** | `spark/tests/` — row-for-row equivalence against dbt, incremental-vs-full convergence, injected-fault quality tests |
 | **Analytical judgement** | `docs/decisions.md` — thresholds, proxy metrics, and what the dataset cannot support, with the arithmetic behind each call |
 
 ---

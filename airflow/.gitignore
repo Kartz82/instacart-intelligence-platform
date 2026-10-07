@@ -1,0 +1,6 @@
+.env
+.astro/
+include/dbt/
+airflow_settings.yaml
+__pycache__/
+logs/

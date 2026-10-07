@@ -27,3 +27,5 @@ dbt/dbt_packages/
 gcp-key.json
 *-sa-key.json
 service-account*.json
+# Lint cache
+.ruff_cache/
