@@ -101,3 +101,9 @@ Last loop update: 2026-10-07 (lakehouse + Airflow upgrade, branch `feature/lakeh
 - [x] **L1 [RESOLVED]** `dim_time.time_key` was engine-dependent (`generate_series` returns DOUBLE on DuckDB). Fixed with integer casts; no-op on Postgres. Decision 9.
 - [x] **L2 [RESOLVED]** `lift` ties at the 6th decimal round differently by engine. Reconciliation tolerance of one unit in the last place on `lift` only. Decision 10.
 - [ ] **L3 [HUMAN]** Re-run the Postgres `dbt build` after the `dim_time` cast and `mart_basket_affinity` var changes. *done = `PASS=256` (or higher) again and marts identical to before. Both changes should be result-neutral on Postgres; this confirms it.*
+
+## M. Tableau Public (closes the Tableau gap: 4 of 18 scored India JDs)
+
+- [x] **M1 [AGENT]** `bi/tableau/export_for_tableau.py` + `TABLEAU_BUILD_GUIDE.md` (parameters, calculated fields, LOD expressions, 5 dashboards, verification checklist). *done = export round-trip tested: row counts and columns identical for 5 marts.*
+- [ ] **M2 [HUMAN]** Export on the real warehouse, build the workbook in Tableau Public, tick every box in guide §5, publish. *done = public URL pasted into `bi/tableau/README.md` and the README.*
+- [ ] **M3 [AGENT]** After M2: add Tableau to the resume skills and the Instacart dashboard bullet. *Not before the link works.*

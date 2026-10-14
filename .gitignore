@@ -29,3 +29,6 @@ gcp-key.json
 service-account*.json
 # Lint cache
 .ruff_cache/
+
+# Tableau extracts (regenerate with bi/tableau/export_for_tableau.py)
+bi/tableau/data/
