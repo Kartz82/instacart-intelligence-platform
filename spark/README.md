@@ -124,12 +124,23 @@ Filled in only from `instacart_ops.pipeline_runs` and the reconciliation noteboo
 
 | Measurement | Value |
 | :--- | :--- |
-| Full-load Job, total wall clock | TODO: verify (sum of `seconds` for one full-mode `run_id` in `instacart_ops.pipeline_runs`) |
-| Slowest stage | TODO: verify (max `seconds` by stage for that run) |
-| Incremental wave, average wall clock | TODO: verify (avg `seconds` of bronze+silver+gold per incremental `run_id`) |
-| Rows MERGEd per wave | TODO: verify (`details.merge` for incremental bronze/silver rows) |
-| `fact_order_items` files before → after OPTIMIZE | TODO: verify (`details.optimize` of the optimize stage) |
-| Marts reconciling to dbt (Postgres) | TODO: verify (`reconcile_with_dbt` output; target 5 / 5) |
+| Full-load Job, total stage time | **187.0 s** (6 stages, all `SUCCESS`; run `605385652285363`, 2026-10-17, Databricks Free Edition serverless) |
+| Slowest stage | **silver, 48.5 s** (bronze 44.3 s, gold 38.9 s, setup 23.9 s, optimize 17.9 s, quality 13.5 s) |
+| Row counts loaded | 3,421,083 orders · 33,819,106 order lines · 206,209 customers · 49,688 products · 254,490 affinity pairs — identical to the dbt (PostgreSQL) build's published counts |
+| Incremental wave, bronze+silver+gold | 154.0 s / 131.1 s / 117.5 s for waves 0 / 1 / 2 (avg **134.2 s**) |
+| Rows MERGEd per wave (`fact_order_items`) | 16,474,179 / 7,398,009 / 4,002,535 for waves 0 / 1 / 2 |
+| `dim_customers` recomputed per wave | 206,209 / 101,696 / 50,731 — only the customers each wave touches |
+| `fact_order_items` files before → after OPTIMIZE | **14 → 4** after wave 0 (411.7 MB → 309.3 MB); 9 → 4 after wave 1; 7 → 6 after wave 2 |
+| Quality gates | Passed on all 4 runs |
+| Marts reconciling to dbt (Postgres) | TODO: verify (`reconcile_with_dbt` output; target 5 / 5) — needs the Postgres marts exported, not yet run |
+
+**How to read the incremental rows.** These waves were MERGEd into the schemas the full
+load had already populated, so every source row matched an existing key:
+`numTargetRowsInserted = 0` and every table's row count is unchanged after each wave. That
+is evidence that re-running a wave is idempotent at full scale. It is **not** a
+measurement of loading new data incrementally — that needs waves loaded into fresh
+schemas. Incremental waves here were not faster than the full load (avg 134.2 s vs
+131.8 s for the same three stages), so no speed-up is claimed.
 
 ---
 
